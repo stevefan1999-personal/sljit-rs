@@ -5,6 +5,7 @@ members = ["example-simple", "sljit-sys"]
 name = "sljit"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
