@@ -6,8 +6,7 @@ name = "sljit"
 version = "0.1.0"
 edition = "2021"
 license-file = "LICENSE"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Placeholder package for sljit high-level bindings"
 
 [dependencies]
 sljit-sys = { version = "0.1.0", path = "sljit-sys" }
