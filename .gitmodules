@@ -1,0 +1,3 @@
+[submodule "sljit-sys/sljit"]
+	path = sljit-sys/sljit
+	url = https://github.com/zherczeg/sljit

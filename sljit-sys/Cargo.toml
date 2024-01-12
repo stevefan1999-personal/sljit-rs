@@ -1,0 +1,40 @@
+[package]
+name = "sljit-sys"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+const-default = { version = "1.0.0", features = ["derive"] }
+derive_more = "0.99.17"
+
+[build-dependencies]
+bindgen = { version = "0.69.1", features = ["experimental"] }
+cc = "1.0.83"
+miette = "5.10.0"
+static_assertions = "1.1.0"
+strum = { version = "0.25.0", features = ["derive"] }
+ast-grep = "0.17.0"
+gag = "1.0.0"
+serde_json = "1.0.111"
+serde = { version = "1.0.195", features = ["derive"] }
+handlebars = "5.0.0"
+
+[features]
+default = []
+arch-i386 = []
+arch-x86_64 = []
+arch-armv6 = []
+arch-armv7 = []
+arch-arm-thumb-2 = []
+arch-arm64 = []
+arch-ppc32 = []
+arch-ppc64 = []
+arch-mips32 = []
+arch-mips64 = []
+arch-rv32 = []
+arch-rv64 = []
+arch-s390x = []
+arch-loongarch64 = []
+

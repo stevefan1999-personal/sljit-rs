@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.embeddedhtml": "html",
+        "sljitconfigcpu.h": "c",
+        "sljitconfiginternal.h": "c"
+    }
+}
