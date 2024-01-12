@@ -3,7 +3,7 @@ members = ["example-simple", "sljit-sys"]
 
 [package]
 name = "sljit"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license-file = "LICENSE"
 description = "Placeholder package for sljit high-level bindings"
