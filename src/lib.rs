@@ -1,1 +1,3 @@
-use sljit_sys::*;
+mod sys {
+    pub use sljit_sys::*;
+}
