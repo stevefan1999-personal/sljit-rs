@@ -1,9 +1,12 @@
 [package]
 name = "sljit-sys"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 license-file = "sljit/LICENSE"
 description = "System crate for sljit using bindgen and ast-grep"
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
 
 [dependencies]
 const-default = { version = "1.0.0", features = ["derive"] }
@@ -37,4 +40,4 @@ arch-rv32 = []
 arch-rv64 = []
 arch-s390x = []
 arch-loongarch64 = []
-
+arch-host = []
