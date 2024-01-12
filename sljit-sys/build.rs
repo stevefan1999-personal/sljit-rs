@@ -152,6 +152,7 @@ fn build_static_library() -> miette::Result<()> {
     let doc = std::env::var("DOCS_RS")
         .or(env::var("CARGO_CFG_DOC"))
         .map(|_| ())
+        .or(if cfg!(docsrs) { Ok(()) } else { Err(()) })
         .or(if cfg!(doc) { Ok(()) } else { Err(()) })
         .is_ok();
 

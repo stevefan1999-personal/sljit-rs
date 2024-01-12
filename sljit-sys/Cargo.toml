@@ -43,4 +43,4 @@ arch-loongarch64 = []
 arch-host = []
 
 [package.metadata.docs.rs]
-rustc-args = [ "--cfg" , "doc"]
+rustc-args = [ "--cfg" , "docsrs"]
