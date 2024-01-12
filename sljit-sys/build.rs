@@ -80,6 +80,27 @@ const ARCH: &[SupportedArchitecture] = &[
 // Make sure that either 0 or 1 arch is selected
 const_assert!(ARCH.len() <= 1);
 
+fn debug() -> bool {
+    env::var("DEBUG")
+        .map_err(|_| ())
+        .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
+        .unwrap_or(false)
+}
+
+fn docs() -> bool {
+    std::env::var("DOCS_RS")
+        .or(env::var("CARGO_CFG_DOC"))
+        .map(|_| ())
+        .or(if cfg!(docsrs_priv) { Ok(()) } else { Err(()) })
+        .or(if cfg!(doc) { Ok(()) } else { Err(()) })
+        .or(if cfg!(feature = "docs") {
+            Ok(())
+        } else {
+            Err(())
+        })
+        .is_ok()
+}
+
 #[derive(Debug)]
 struct ConstDefaultCallbacks;
 
@@ -96,8 +117,14 @@ impl bindgen::callbacks::ParseCallbacks for ConstDefaultCallbacks {
 fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
     let out_path: PathBuf = PathBuf::from(env::var("OUT_DIR").unwrap());
 
+    let debug = if debug() && !docs() { "1" } else { "0" };
+
     let bindings = bindgen::Builder::default()
         .header(header)
+        .clang_args([
+            format!("-D{}={}", "SLJIT_DEBUG", debug),
+            format!("-D{}={}", "SLJIT_VERBOSE", debug),
+        ])
         .allowlist_file(format!(".*?sljit.*"))
         .vtable_generation(true)
         .ctypes_prefix("::core::ffi")
@@ -140,24 +167,9 @@ fn build_static_library() -> miette::Result<()> {
         cc.define(ARCH.get(0).unwrap().into(), "1");
     }
 
-    env::var("DEBUG")
-        .map_err(|_| ())
-        .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
-        .unwrap_or(false);
-
-    let debug = env::var("DEBUG")
-        .map_err(|_| ())
-        .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
-        .unwrap_or(false);
-    let doc = std::env::var("DOCS_RS")
-        .or(env::var("CARGO_CFG_DOC"))
-        .map(|_| ())
-        .or(if cfg!(docsrs_priv) { Ok(()) } else { Err(()) })
-        .or(if cfg!(doc) { Ok(()) } else { Err(()) })
-        .is_ok();
-
-    cc.define("SLJIT_DEBUG", if debug && !doc { "1" } else { "0" });
-    cc.define("SLJIT_VERBOSE", if debug && !doc { "1" } else { "0" });
+    let debug = if debug() && !docs() { "1" } else { "0" };
+    cc.define("SLJIT_DEBUG", debug);
+    cc.define("SLJIT_VERBOSE", debug);
 
     cc.try_compile("libsljit").into_diagnostic()?;
     Ok(())

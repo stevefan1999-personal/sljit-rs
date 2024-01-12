@@ -5,10 +5,10 @@ members = ["example-simple", "sljit-sys"]
 authors = ["Steve Fan <29133953+stevefan1999-personal@users.noreply.github.com>"]
 repository = "https://github.com/stevefan1999-personal/sljit-rs"
 keywords = ["jit"]
-version = "0.1.5"
+version = "0.1.6"
 
 [workspace.dependencies]
-sljit-sys = { version = "0.1.5", path = "sljit-sys" }
+sljit-sys = { version = "0.1.6", path = "sljit-sys" }
 
 [package]
 name = "sljit"
@@ -40,6 +40,8 @@ arch-rv64 = ["sljit-sys/arch-rv64"]
 arch-s390x = ["sljit-sys/arch-s390x"]
 arch-loongarch64 = ["sljit-sys/arch-loongarch64"]
 arch-host = ["sljit-sys/arch-host"]
+docs = ["sljit-sys/docs"]
 
 [package.metadata.docs.rs]
-rustc-args = [ "--cfg" , "docsrs_priv"]
+rustc-args = ["--cfg", "docsrs_priv"]
+features = ["docs"]
