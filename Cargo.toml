@@ -7,6 +7,9 @@ repository = "https://github.com/stevefan1999-personal/sljit-rs"
 keywords = ["jit"]
 version = "0.1.2"
 
+[workspace.dependencies]
+sljit-sys = { version = "0.1.2", path = "sljit-sys" }
+
 [package]
 name = "sljit"
 version.workspace = true
@@ -18,7 +21,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-sljit-sys = { version = "*", path = "sljit-sys" }
+sljit-sys.workspace = true
 
 [features]
 default = []
