@@ -25,7 +25,7 @@ serde = { version = "1.0.195", features = ["derive"] }
 handlebars = "5.0.0"
 
 [features]
-default = []
+default = ["arch-host"]
 arch-i386 = []
 arch-x86_64 = []
 arch-armv6 = []
@@ -41,3 +41,6 @@ arch-rv64 = []
 arch-s390x = []
 arch-loongarch64 = []
 arch-host = []
+
+[package.metadata.docs.rs]
+rustc-args = [ "--cfg" , "doc"]
