@@ -192,7 +192,10 @@ mod integration_tests {
             let mut compiler = Compiler::new();
             compiler.emit_enter(
                 0,
-                SLJIT_ARG_TYPE_W | (SLJIT_ARG_TYPE_P << (1 * 4)) | (SLJIT_ARG_TYPE_W << (2 * 4)) | (SLJIT_ARG_TYPE_W << (3 * 4)),
+                SLJIT_ARG_TYPE_W
+                    | (SLJIT_ARG_TYPE_P << (1 * 4))
+                    | (SLJIT_ARG_TYPE_W << (2 * 4))
+                    | (SLJIT_ARG_TYPE_W << (3 * 4)),
                 4,
                 3,
                 0,

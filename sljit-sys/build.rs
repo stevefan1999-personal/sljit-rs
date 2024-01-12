@@ -140,12 +140,23 @@ fn build_static_library() -> miette::Result<()> {
         cc.define(ARCH.get(0).unwrap().into(), "1");
     }
 
-    if let Ok(debug) = env::var("DEBUG") {
-        if let Ok(debug) = bool::from_str(debug.as_str()) {
-            cc.define("SLJIT_DEBUG", if debug { "1" } else { "0" });
-            cc.define("SLJIT_VERBOSE", if debug { "1" } else { "0" });
-        }
-    }
+    env::var("DEBUG")
+        .map_err(|_| ())
+        .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
+        .unwrap_or(false);
+
+    let debug = env::var("DEBUG")
+        .map_err(|_| ())
+        .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
+        .unwrap_or(false);
+    let doc = std::env::var("DOCS_RS")
+        .or(env::var("CARGO_CFG_DOC"))
+        .map(|_| ())
+        .or(if cfg!(doc) { Ok(()) } else { Err(()) })
+        .is_ok();
+
+    cc.define("SLJIT_DEBUG", if debug && !doc { "1" } else { "0" });
+    cc.define("SLJIT_VERBOSE", if debug && !doc { "1" } else { "0" });
 
     cc.try_compile("libsljit").into_diagnostic()?;
     Ok(())
