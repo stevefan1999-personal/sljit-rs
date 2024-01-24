@@ -1,14 +1,22 @@
+#[cfg(feature = "bindgen")]
 use bindgen::{
     callbacks::{DeriveInfo, TypeKind},
     CargoCallbacks,
 };
+#[cfg(feature = "bindgen")]
 use gag::BufferRedirect;
+#[cfg(feature = "bindgen")]
 use handlebars::Handlebars;
+#[cfg(feature = "bindgen")]
 use miette::miette;
-use miette::{IntoDiagnostic, WrapErr};
+use miette::IntoDiagnostic;
+#[cfg(feature = "bindgen")]
+use miette::WrapErr;
+#[cfg(feature = "bindgen")]
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::str::FromStr;
+#[cfg(feature = "bindgen")]
 use std::{borrow::Cow, collections::HashMap};
 use std::{env, path::PathBuf};
 use strum::IntoStaticStr;
@@ -101,9 +109,11 @@ fn docs() -> bool {
         .is_ok()
 }
 
+#[cfg(feature = "bindgen")]
 #[derive(Debug)]
 struct ConstDefaultCallbacks;
 
+#[cfg(feature = "bindgen")]
 impl bindgen::callbacks::ParseCallbacks for ConstDefaultCallbacks {
     fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
         if info.kind == TypeKind::Struct {
@@ -114,8 +124,9 @@ impl bindgen::callbacks::ParseCallbacks for ConstDefaultCallbacks {
     }
 }
 
+#[cfg(feature = "bindgen")]
 fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
-    let out_path: PathBuf = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path: PathBuf = PathBuf::from("./src");
 
     let debug = if debug() && !docs() { "1" } else { "0" };
 
@@ -155,7 +166,7 @@ fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
 }
 
 fn build_static_library() -> miette::Result<()> {
-    let out_path: PathBuf = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_path: PathBuf = PathBuf::from("./src");
     let mut cc = cc::Build::new();
 
     let cc = cc
@@ -175,9 +186,10 @@ fn build_static_library() -> miette::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "bindgen")]
 fn generate_mid_level_binding(out_path: PathBuf) -> miette::Result<()> {
     println!("cargo:rerun-if-changed=rules");
-    let out_dir: PathBuf = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_dir: PathBuf = PathBuf::from("./src");
 
     let buf = BufferRedirect::stdout().into_diagnostic()?;
     ast_grep::main_with_args(
@@ -215,19 +227,23 @@ impl Compiler {
 }
 
 fn main() -> miette::Result<()> {
-    let out_path = do_bindgen("sljit/sljit_src/sljitLir.h", "wrapper.rs")?;
-    generate_mid_level_binding(out_path)?;
+    #[cfg(feature = "bindgen")]
+    {
+        let out_path = do_bindgen("sljit/sljit_src/sljitLir.h", "wrapper.rs")?;
+        generate_mid_level_binding(out_path)?;
+    }
     build_static_library()?;
     Ok(())
 }
 
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Position {
     line: usize,
     column: usize,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Range {
@@ -236,21 +252,21 @@ struct Range {
     start: Position,
     end: Position,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LabelJSON<'a> {
     text: &'a str,
     range: Range,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MatchNode<'a> {
     text: Cow<'a, str>,
     range: Range,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MatchJSON<'a> {
@@ -266,7 +282,7 @@ struct MatchJSON<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     meta_variables: Option<MetaVariables<'a>>,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MetaVariables<'a> {
@@ -274,7 +290,7 @@ struct MetaVariables<'a> {
     multi: HashMap<String, Vec<MatchNode<'a>>>,
     transformed: HashMap<String, String>,
 }
-
+#[cfg(feature = "bindgen")]
 #[derive(Serialize)]
 struct Context {
     name: String,

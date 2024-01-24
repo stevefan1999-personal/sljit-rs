@@ -1516,14 +1516,14 @@ dependencies = [
 
 [[package]]
 name = "sljit"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "sljit-sys",
 ]
 
 [[package]]
 name = "sljit-sys"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "ast-grep",
  "bindgen",

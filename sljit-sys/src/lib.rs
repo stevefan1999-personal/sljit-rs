@@ -9,7 +9,7 @@ use core::{ffi::CStr, ptr::null_mut, str::Utf8Error};
 use const_default::ConstDefault;
 use derive_more::From;
 
-include!(concat!(env!("OUT_DIR"), "/wrapper.rs"));
+include!("./wrapper.rs");
 
 pub fn has_cpu_feature(feature_type: sljit_s32) -> sljit_s32 {
     unsafe { sljit_has_cpu_feature(feature_type) }
@@ -139,7 +139,7 @@ impl Compiler {
     }
 }
 
-include!(concat!(env!("OUT_DIR"), "/generated.mid.rs"));
+include!("./generated.mid.rs");
 
 #[cfg(test)]
 mod integration_tests {

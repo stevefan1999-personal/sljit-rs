@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sljit-sys = { version = "0.1.0", path = "../sljit-sys" }
+sljit-sys = { version = "0.2.0", path = "../sljit-sys" }
 vc-ltl = "5.0.9"
 
 [profile.release]
