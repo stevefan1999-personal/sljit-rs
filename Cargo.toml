@@ -41,6 +41,7 @@ arch-s390x = ["sljit-sys/arch-s390x"]
 arch-loongarch64 = ["sljit-sys/arch-loongarch64"]
 arch-host = ["sljit-sys/arch-host"]
 docs = ["sljit-sys/docs"]
+bindgen = ["sljit-sys/bindgen"]
 
 [package.metadata.docs.rs]
 rustc-args = ["--cfg", "docsrs_priv"]
