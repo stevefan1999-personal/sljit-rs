@@ -1,17 +1,14 @@
 #[cfg(feature = "bindgen")]
-use bindgen::{
-    callbacks::{DeriveInfo, TypeKind},
-    CargoCallbacks,
-};
+use bindgen::callbacks::{DeriveInfo, TypeKind};
 #[cfg(feature = "bindgen")]
 use gag::BufferRedirect;
 #[cfg(feature = "bindgen")]
 use handlebars::Handlebars;
-#[cfg(feature = "bindgen")]
-use miette::miette;
 use miette::IntoDiagnostic;
 #[cfg(feature = "bindgen")]
 use miette::WrapErr;
+#[cfg(feature = "bindgen")]
+use miette::miette;
 #[cfg(feature = "bindgen")]
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
@@ -33,6 +30,7 @@ enum SupportedArchitecture {
     #[strum(serialize = "SLJIT_CONFIG_ARM_V7")]
     ARMV7,
     #[strum(serialize = "SLJIT_CONFIG_ARM_THUMB2")]
+    #[allow(non_camel_case_types)]
     ARM_THUMB2,
     #[strum(serialize = "SLJIT_CONFIG_ARM_64")]
     ARM64,
@@ -99,7 +97,7 @@ fn docs() -> bool {
     std::env::var("DOCS_RS")
         .or(env::var("CARGO_CFG_DOC"))
         .map(|_| ())
-        .or(if cfg!(docsrs_priv) { Ok(()) } else { Err(()) })
+        .or(if cfg!(docsrs) { Ok(()) } else { Err(()) })
         .or(if cfg!(doc) { Ok(()) } else { Err(()) })
         .or(if cfg!(feature = "docs") {
             Ok(())
@@ -116,8 +114,25 @@ struct ConstDefaultCallbacks;
 #[cfg(feature = "bindgen")]
 impl bindgen::callbacks::ParseCallbacks for ConstDefaultCallbacks {
     fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
-        if info.kind == TypeKind::Struct {
+        if info.kind == TypeKind::Struct
+            && !["sljit_jump", "sljit_label", "sljit_read_only_buffer"].contains(&info.name)
+        {
             vec!["ConstDefault".to_string()]
+        } else {
+            vec![]
+        }
+    }
+}
+
+#[cfg(feature = "bindgen")]
+#[derive(Debug)]
+struct TypedBuilderCallbacks;
+
+#[cfg(feature = "bindgen")]
+impl bindgen::callbacks::ParseCallbacks for TypedBuilderCallbacks {
+    fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
+        if info.kind == TypeKind::Struct {
+            vec!["TypedBuilder".to_string()]
         } else {
             vec![]
         }
@@ -138,6 +153,7 @@ fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
         ])
         .allowlist_file(format!(".*?sljit.*"))
         .vtable_generation(true)
+        .opaque_type("FILE")
         .ctypes_prefix("::core::ffi")
         .use_core()
         .derive_copy(true)
@@ -152,7 +168,8 @@ fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
         .newtype_enum(".*")
         .default_macro_constant_type(bindgen::MacroTypeVariation::Signed)
         .parse_callbacks(Box::new(ConstDefaultCallbacks))
-        .parse_callbacks(Box::new(CargoCallbacks::new()))
+        .parse_callbacks(Box::new(TypedBuilderCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .into_diagnostic()
         .wrap_err("Failed to generate bindgen config")?;
@@ -175,7 +192,7 @@ fn build_static_library() -> miette::Result<()> {
         .include(".");
 
     if ARCH.len() == 1 {
-        cc.define(ARCH.get(0).unwrap().into(), "1");
+        cc.define(ARCH.first().unwrap().into(), "1");
     }
 
     let debug = if debug() && !docs() { "1" } else { "0" };
@@ -188,6 +205,8 @@ fn build_static_library() -> miette::Result<()> {
 
 #[cfg(feature = "bindgen")]
 fn generate_mid_level_binding(out_path: PathBuf) -> miette::Result<()> {
+    use cmd_lib::run_cmd;
+
     println!("cargo:rerun-if-changed=rules");
     let out_dir: PathBuf = PathBuf::from("./src");
 
@@ -221,8 +240,9 @@ impl Compiler {
             &serde_json::json!({"replacements": replacements}),
         )
         .into_diagnostic()?;
-    std::fs::write(out_dir.join("generated.mid.rs"), rendered).into_diagnostic()?;
-
+    let path = out_dir.join("generated.mid.rs");
+    std::fs::write(&path, rendered).into_diagnostic()?;
+    run_cmd!(rustfmt $path).into_diagnostic()?;
     Ok(())
 }
 

@@ -13,8 +13,6 @@ fn main() {
         1,
         3,
         0,
-        0,
-        0,
     );
     compiler.emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0);
 

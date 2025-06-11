@@ -1,29 +1,9 @@
 [package]
 name = "example-simple"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sljit-sys = { version = "0.2.0", path = "../sljit-sys" }
-vc-ltl = "5.0.9"
-
-[profile.release]
-incremental = true
-lto = "thin"
-
-[profile.min-size-release]
-inherits = "release"
-codegen-units = 1
-lto = "fat"
-opt-level = "s"
-
-[profile.release-strip]
-inherits = "release"
-strip = "symbols"
-
-[profile.min-size-release-strip]
-inherits = "min-size-release"
-strip = "symbols"
-
+sljit-sys = { version = "*", path = "../sljit-sys" }

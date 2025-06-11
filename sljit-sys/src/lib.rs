@@ -1,5 +1,4 @@
 #![cfg_attr(not(test), no_std)]
-#![feature(trivial_bounds)]
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -8,134 +7,141 @@ use core::{ffi::CStr, ptr::null_mut, str::Utf8Error};
 
 use const_default::ConstDefault;
 use derive_more::From;
+use typed_builder::TypedBuilder;
 
 include!("./wrapper.rs");
 
+#[inline(always)]
 pub fn has_cpu_feature(feature_type: sljit_s32) -> sljit_s32 {
     unsafe { sljit_has_cpu_feature(feature_type) }
 }
 
+#[inline(always)]
 pub fn cmp_info(type_: sljit_s32) -> sljit_s32 {
     unsafe { sljit_cmp_info(type_) }
 }
 
+#[inline(always)]
 pub fn set_jump_addr(addr: sljit_uw, new_target: sljit_uw, executable_offset: sljit_sw) {
     unsafe { sljit_set_jump_addr(addr, new_target, executable_offset) }
 }
 
-pub fn set_const(addr: sljit_uw, new_constant: sljit_sw, executable_offset: sljit_sw) {
-    unsafe { sljit_set_const(addr, new_constant, executable_offset) }
+#[inline(always)]
+pub fn set_const(
+    addr: sljit_uw,
+    op: sljit_s32,
+    new_constant: sljit_sw,
+    executable_offset: sljit_sw,
+) {
+    unsafe { sljit_set_const(addr, op, new_constant, executable_offset) }
 }
 
+#[inline(always)]
 pub fn get_register_index(type_: sljit_s32, reg: sljit_s32) -> sljit_s32 {
     unsafe { sljit_get_register_index(type_, reg) }
 }
 
+#[inline(always)]
 pub fn get_platform_name() -> Result<&'static str, Utf8Error> {
     unsafe { CStr::from_ptr(sljit_get_platform_name()).to_str() }
 }
 
 #[repr(transparent)]
 #[derive(From)]
-pub struct Constant {
-    inner: *mut sljit_const,
-}
+pub struct Constant(*mut sljit_const);
 
 impl Constant {
+    #[inline(always)]
     pub fn addr(&self) -> sljit_uw {
-        unsafe { sljit_get_const_addr(self.inner) }
+        unsafe { sljit_get_const_addr(self.0) }
     }
 }
 
 #[repr(transparent)]
 #[derive(From)]
-pub struct Label {
-    inner: *mut sljit_label,
-}
+pub struct Label(*mut sljit_label);
 
 impl Label {
+    #[inline(always)]
     pub fn addr(&self) -> sljit_uw {
-        unsafe { sljit_get_label_addr(self.inner) }
+        unsafe { sljit_get_label_addr(self.0) }
     }
 }
 
 #[repr(transparent)]
 #[derive(From)]
-pub struct PutLabel {
-    inner: *mut sljit_put_label,
-}
-
-impl PutLabel {
-    pub fn set_label(&mut self, label: &Label) {
-        unsafe { sljit_set_put_label(self.inner, label.inner) }
-    }
-}
-
-#[repr(transparent)]
-#[derive(From)]
-pub struct Jump {
-    inner: *mut sljit_jump,
-}
+pub struct Jump(*mut sljit_jump);
 
 impl Jump {
+    #[inline(always)]
     pub fn set_label(&mut self, label: &Label) {
-        unsafe { sljit_set_label(self.inner, label.inner) }
+        unsafe { sljit_set_label(self.0, label.0) }
     }
 
+    #[inline(always)]
     pub fn set_target(&mut self, target: sljit_uw) {
-        unsafe { sljit_set_target(self.inner, target) }
+        unsafe { sljit_set_target(self.0, target) }
     }
 
+    #[inline(always)]
     pub fn addr(&self) -> sljit_uw {
-        unsafe { sljit_get_jump_addr(self.inner) }
+        unsafe { sljit_get_jump_addr(self.0) }
     }
 }
 
 #[repr(transparent)]
-pub struct GeneratedCode {
-    code: *mut ::core::ffi::c_void,
-}
+#[derive(From)]
+pub struct GeneratedCode(*mut ::core::ffi::c_void);
 
 impl GeneratedCode {
+    #[inline(always)]
     pub fn get(&self) -> *const ::core::ffi::c_void {
-        self.code
+        self.0
     }
 }
 
 impl Drop for GeneratedCode {
+    #[inline(always)]
     fn drop(&mut self) {
         unsafe {
-            sljit_free_code(self.code, null_mut());
-        }
-    }
-}
-
-impl Drop for Compiler {
-    fn drop(&mut self) {
-        unsafe {
-            sljit_free_compiler(self.inner);
+            sljit_free_code(self.0, null_mut());
         }
     }
 }
 
 #[repr(transparent)]
-pub struct Compiler {
-    inner: *mut sljit_compiler,
-}
+#[derive(From)]
+pub struct Compiler(*mut sljit_compiler);
 
-impl Compiler {
-    pub fn new() -> Self {
-        Self {
-            inner: unsafe { sljit_create_compiler(null_mut(), null_mut()) },
-        }
+impl Default for Compiler {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Compiler {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self(unsafe { sljit_create_compiler(null_mut()) })
+    }
+}
+
+impl Compiler {
+    #[inline(always)]
     pub fn generate_code(self) -> GeneratedCode {
-        let code = unsafe { sljit_generate_code(self.inner) };
+        let code = unsafe { sljit_generate_code(self.0, 0, null_mut()) };
         drop(self);
-        GeneratedCode { code }
+        GeneratedCode(code)
+    }
+}
+
+impl Drop for Compiler {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unsafe {
+            sljit_free_compiler(self.0);
+        }
     }
 }
 
@@ -154,13 +160,11 @@ mod integration_tests {
             compiler.emit_enter(
                 0,
                 SLJIT_ARG_TYPE_W
-                    | (SLJIT_ARG_TYPE_W << (1 * 4))
+                    | (SLJIT_ARG_TYPE_W << 4)
                     | (SLJIT_ARG_TYPE_W << (2 * 4))
                     | (SLJIT_ARG_TYPE_W << (3 * 4)),
                 1,
                 3,
-                0,
-                0,
                 0,
             );
             compiler.emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0);
@@ -193,13 +197,11 @@ mod integration_tests {
             compiler.emit_enter(
                 0,
                 SLJIT_ARG_TYPE_W
-                    | (SLJIT_ARG_TYPE_P << (1 * 4))
+                    | (SLJIT_ARG_TYPE_P << 4)
                     | (SLJIT_ARG_TYPE_W << (2 * 4))
                     | (SLJIT_ARG_TYPE_W << (3 * 4)),
                 4,
                 3,
-                0,
-                0,
                 0,
             );
 
@@ -226,14 +228,14 @@ mod integration_tests {
                 SLJIT_MOV,
                 SLJIT_R0,
                 0,
-                SLJIT_MEM | (SLJIT_S0) | ((SLJIT_S2) << 8),
+                SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
                 SLJIT_WORD_SHIFT.into(),
             );
 
             /* print_num(R0)           */
             compiler.emit_icall(
                 SLJIT_CALL,
-                SLJIT_ARG_TYPE_RET_VOID | (SLJIT_ARG_TYPE_W << (1 * 4)),
+                SLJIT_ARG_TYPE_RET_VOID | (SLJIT_ARG_TYPE_W << 4),
                 SLJIT_IMM,
                 print_num as _,
             );

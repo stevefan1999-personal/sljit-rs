@@ -15,7 +15,7 @@ transform:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) -> Constant { unsafe { $FUNC(self.inner, $PARAMS) }.into() }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> Constant { unsafe { $FUNC(self.0, $PARAMS) }.into() }'
 id: rewrite-with-return-type-constant
 language: rust
 ---
@@ -36,7 +36,7 @@ transform:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) -> Label { unsafe { $FUNC(self.inner, $PARAMS) }.into() }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> Label { unsafe { $FUNC(self.0, $PARAMS) }.into() }'
 id: rewrite-with-return-type-label
 language: rust
 ---
@@ -57,7 +57,7 @@ transform:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) -> PutLabel { unsafe { $FUNC(self.inner, $PARAMS) }.into() }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> PutLabel { unsafe { $FUNC(self.0, $PARAMS) }.into() }'
 id: rewrite-with-return-type-put-label
 language: rust
 ---
@@ -78,7 +78,7 @@ transform:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) -> Jump { unsafe { $FUNC(self.inner, $PARAMS) }.into() }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> Jump { unsafe { $FUNC(self.0, $PARAMS) }.into() }'
 id: rewrite-with-return-type-jump
 language: rust
 ---
@@ -92,7 +92,7 @@ rule:
   - not:
       any:
       - pattern: |
-          pub fn sljit_generate_code(compiler: *mut sljit_compiler) -> $RET;
+          pub fn sljit_generate_code(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
       - pattern: |
           pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_const;
       - pattern: |
@@ -116,12 +116,13 @@ transform:
       source: $FUNC
       replace: "sljit_(.*)"
       by: "$1"
+
   PARAMS:
     replace:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) -> $RET { unsafe { $FUNC(self.inner, $PARAMS) } }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> $RET { unsafe { $FUNC(self.0, $PARAMS) } }'
 id: rewrite-with-return-type
 language: rust
 ---
@@ -147,6 +148,6 @@ transform:
       source: $$$ARGS
       replace: "(.*?): .*"
       by: "$1,"
-fix: pub fn $NAME(&mut self, $$$ARGS) { unsafe { $FUNC(self.inner, $PARAMS) } }
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) { unsafe { $FUNC(self.0, $PARAMS) } }'
 id: rewrite-without-return-type
 language: rust
