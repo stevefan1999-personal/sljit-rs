@@ -45,6 +45,8 @@ arch-loongarch64 = []
 arch-host = []
 docs = []
 bindgen = ["dep:bindgen", "dep:ast-grep", "dep:gag", "dep:handlebars", "dep:serde", "dep:serde_json", "dep:cmd_lib"]
+force-verbose = []
+force-debug = []
 
 [package.metadata.docs.rs]
 features = ["docs"]

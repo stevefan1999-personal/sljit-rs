@@ -87,14 +87,16 @@ const ARCH: &[SupportedArchitecture] = &[
 const_assert!(ARCH.len() <= 1);
 
 fn debug() -> bool {
-    env::var("DEBUG")
+    (env::var("DEBUG")
         .map_err(|_| ())
         .and_then(|debug| bool::from_str(debug.as_str()).map_err(|_| ()))
         .unwrap_or(false)
+        && cfg!(debug_assertions))
+        || cfg!(feature = "force-debug")
 }
 
 fn docs() -> bool {
-    std::env::var("DOCS_RS")
+    env::var("DOCS_RS")
         .or(env::var("CARGO_CFG_DOC"))
         .map(|_| ())
         .or(if cfg!(docsrs) { Ok(()) } else { Err(()) })
@@ -143,17 +145,24 @@ impl bindgen::callbacks::ParseCallbacks for TypedBuilderCallbacks {
 fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
     let out_path: PathBuf = PathBuf::from("./src");
 
-    let debug = if debug() && !docs() { "1" } else { "0" };
+    let (debug, verbose) = match (debug(), cfg!(feature = "force-verbose"), docs()) {
+        (false, false, _) | (_, _, true) => ("0", "0"),
+        (false, true, _) => ("0", "1"),
+        (true, false, _) => ("1", "0"),
+        (true, true, _) => ("1", "1"),
+    };
 
-    let bindings = bindgen::Builder::default()
+    let bindings = bindgen::Builder
+        ::default()
         .header(header)
         .clang_args([
             format!("-D{}={}", "SLJIT_DEBUG", debug),
-            format!("-D{}={}", "SLJIT_VERBOSE", debug),
+            format!("-D{}={}", "SLJIT_VERBOSE", verbose),
         ])
         .allowlist_file(format!(".*?sljit.*"))
         .vtable_generation(true)
         .opaque_type("FILE")
+        .opaque_type("sljit_(memory_fragment|label|jump|const|generate_code_buffer|read_only_buffer|compiler|stack|function_context)")
         .ctypes_prefix("::core::ffi")
         .use_core()
         .derive_copy(true)
@@ -195,9 +204,15 @@ fn build_static_library() -> miette::Result<()> {
         cc.define(ARCH.first().unwrap().into(), "1");
     }
 
-    let debug = if debug() && !docs() { "1" } else { "0" };
+    let (debug, verbose) = match (debug(), cfg!(feature = "force-verbose"), docs()) {
+        (false, false, _) | (_, _, true) => ("0", "0"),
+        (false, true, _) => ("0", "1"),
+        (true, false, _) => ("1", "0"),
+        (true, true, _) => ("1", "1"),
+    };
+
     cc.define("SLJIT_DEBUG", debug);
-    cc.define("SLJIT_VERBOSE", debug);
+    cc.define("SLJIT_VERBOSE", verbose);
 
     cc.try_compile("libsljit").into_diagnostic()?;
     Ok(())
