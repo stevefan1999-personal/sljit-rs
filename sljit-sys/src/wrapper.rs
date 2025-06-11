@@ -14,49 +14,49 @@ pub type sljit_f32 = f32;
 pub type sljit_f64 = f64;
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, ConstDefault, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_memory_fragment {
     pub _bindgen_opaque_blob: [u64; 3usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_label {
     pub _bindgen_opaque_blob: [u64; 3usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_jump {
     pub _bindgen_opaque_blob: [u64; 4usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, ConstDefault, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_const {
     pub _bindgen_opaque_blob: [u64; 2usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, ConstDefault, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_generate_code_buffer {
     pub _bindgen_opaque_blob: [u64; 3usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_read_only_buffer {
     pub _bindgen_opaque_blob: [u64; 3usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, ConstDefault, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_compiler {
-    pub _bindgen_opaque_blob: [u64; 19usize],
+    pub _bindgen_opaque_blob: [u64; 23usize],
 }
 #[repr(C)]
 #[repr(align(8))]
-#[derive(Debug, Copy, Clone, Hash, ConstDefault, TypedBuilder)]
+#[derive(Debug, Copy, Clone, Hash)]
 pub struct sljit_stack {
     pub _bindgen_opaque_blob: [u64; 4usize],
 }

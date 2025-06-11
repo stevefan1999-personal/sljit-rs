@@ -9,9 +9,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-const-default = { version = "1.0.0", features = ["derive"] }
 derive_more = { version = "2.0.1", default-features = false, features = ["from"] }
-typed-builder = "0.21.0"
 
 [build-dependencies]
 ast-grep = { version = "0.38.5", optional = true }

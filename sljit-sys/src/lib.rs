@@ -5,9 +5,7 @@
 
 use core::{ffi::CStr, ptr::null_mut, str::Utf8Error};
 
-use const_default::ConstDefault;
 use derive_more::From;
-use typed_builder::TypedBuilder;
 
 include!("./wrapper.rs");
 
@@ -66,6 +64,16 @@ impl Label {
     pub fn addr(&self) -> sljit_uw {
         unsafe { sljit_get_label_addr(self.0) }
     }
+
+    #[inline(always)]
+    pub fn index(&self) -> sljit_uw {
+        unsafe { sljit_get_label_index(self.0) }
+    }
+
+    #[inline(always)]
+    pub fn abs_addr(&self) -> sljit_uw {
+        unsafe { sljit_get_label_abs_addr(self.0) }
+    }
 }
 
 #[repr(transparent)]
@@ -86,6 +94,26 @@ impl Jump {
     #[inline(always)]
     pub fn addr(&self) -> sljit_uw {
         unsafe { sljit_get_jump_addr(self.0) }
+    }
+
+    #[inline(always)]
+    pub fn target(&self) -> sljit_uw {
+        unsafe { sljit_jump_get_target(self.0) }
+    }
+
+    #[inline(always)]
+    pub fn label(&self) -> Label {
+        (unsafe { sljit_jump_get_label(self.0) }).into()
+    }
+
+    #[inline(always)]
+    pub fn has_label(&self) -> bool {
+        unsafe { sljit_jump_has_label(self.0) != 0 }
+    }
+
+    #[inline(always)]
+    pub fn has_target(&self) -> bool {
+        unsafe { sljit_jump_has_target(self.0) != 0 }
     }
 }
 

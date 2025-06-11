@@ -1,6 +1,4 @@
 #[cfg(feature = "bindgen")]
-use bindgen::callbacks::{DeriveInfo, TypeKind};
-#[cfg(feature = "bindgen")]
 use gag::BufferRedirect;
 #[cfg(feature = "bindgen")]
 use handlebars::Handlebars;
@@ -110,38 +108,6 @@ fn docs() -> bool {
 }
 
 #[cfg(feature = "bindgen")]
-#[derive(Debug)]
-struct ConstDefaultCallbacks;
-
-#[cfg(feature = "bindgen")]
-impl bindgen::callbacks::ParseCallbacks for ConstDefaultCallbacks {
-    fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
-        if info.kind == TypeKind::Struct
-            && !["sljit_jump", "sljit_label", "sljit_read_only_buffer"].contains(&info.name)
-        {
-            vec!["ConstDefault".to_string()]
-        } else {
-            vec![]
-        }
-    }
-}
-
-#[cfg(feature = "bindgen")]
-#[derive(Debug)]
-struct TypedBuilderCallbacks;
-
-#[cfg(feature = "bindgen")]
-impl bindgen::callbacks::ParseCallbacks for TypedBuilderCallbacks {
-    fn add_derives(&self, info: &DeriveInfo<'_>) -> Vec<String> {
-        if info.kind == TypeKind::Struct {
-            vec!["TypedBuilder".to_string()]
-        } else {
-            vec![]
-        }
-    }
-}
-
-#[cfg(feature = "bindgen")]
 fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
     let out_path: PathBuf = PathBuf::from("./src");
 
@@ -176,8 +142,6 @@ fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
         .wrap_static_fns_path(out_path.join("out"))
         .newtype_enum(".*")
         .default_macro_constant_type(bindgen::MacroTypeVariation::Signed)
-        .parse_callbacks(Box::new(ConstDefaultCallbacks))
-        .parse_callbacks(Box::new(TypedBuilderCallbacks))
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .into_diagnostic()
