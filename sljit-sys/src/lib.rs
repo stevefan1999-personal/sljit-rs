@@ -44,8 +44,85 @@ pub fn get_platform_name() -> Result<&'static str, Utf8Error> {
     unsafe { CStr::from_ptr(sljit_get_platform_name()).to_str() }
 }
 
+/// Encodes function argument types and return type into a bit-packed integer for SLJIT.
+///
+/// Each type occupies 4 bits in the resulting value:
+/// - Bits 0-3: Return type
+/// - Bits 4-7: First argument type
+/// - Bits 8-11: Second argument type
+/// - Bits 12-15: Third argument type
+/// - Bits 16-19: Fourth argument type
+///
+/// # Examples
+/// ```
+/// # use sljit_sys::*;
+/// // Function with three arguments returning a word
+/// let sig = arg_types!([P, W, W] -> W);
+///
+/// // Function with no return value (void)
+/// let sig = arg_types!([W, W]);
+///
+/// // Function with no arguments
+/// let sig = arg_types!([]);
+/// ```
+///
+/// # Limitations
+/// - Maximum of 4 arguments supported
+/// - Each argument type must fit in 4 bits
+#[macro_export]
+macro_rules! arg_types {
+    // Public interface: arguments with explicit return type
+    ([$($args:tt),*] -> $ret:tt) => {
+        $crate::arg_types!(@internal $ret; $($args),*)
+    };
+
+    // Public interface: arguments with default void return
+    ([$($args:tt),*]) => {
+        $crate::arg_types!(@internal RET_VOID; $($args),*)
+    };
+
+    // Alternative syntax: return type first
+    ($ret:tt -> [$($args:tt),*]) => {
+        $crate::arg_types!(@internal $ret; $($args),*)
+    };
+
+    // Internal implementation: iterative encoding with compile-time bounds checking
+    (@internal $ret:tt; $($args:tt),*) => {
+        {
+
+        // Compile-time assertion for maximum argument count
+        const _: () = {
+            if const { $crate::arg_types!(@count; $($args),*) } > 4 {
+                panic!("arg_types! macro supports maximum 4 arguments");
+            }
+        };
+
+        $crate::arg_types!(@encode $ret; 0; 1; $($args),*)
+        }
+    };
+
+    // Encode implementation: iterative bit packing
+    (@encode $ret:tt; $acc:expr; $shift:expr;) => {
+        // Base case: return type in bits 0-3, accumulated arguments in higher bits
+        (pastey::paste!{ [<SLJIT_ARG_TYPE_ $ret>] }) | ($acc)
+    };
+
+    (@encode $ret:tt; $acc:expr; $shift:expr; $arg:tt $(, $rest:tt)*) => {
+        $crate::arg_types!(@encode
+            $ret;
+            $acc | ((pastey::paste!{ [<SLJIT_ARG_TYPE_ $arg>] }) << ($shift * 4));
+            $shift + 1;
+            $($rest),*
+        )
+    };
+
+    // Helper: count arguments at compile time
+    (@count;) => { 0 };
+    (@count; $head:tt $(, $tail:tt)*) => { 1 + $crate::arg_types!(@count; $($tail),*) };
+}
+
 #[repr(transparent)]
-#[derive(From)]
+#[derive(From, Clone, Copy)]
 pub struct Constant(*mut sljit_const);
 
 impl Constant {
@@ -56,7 +133,7 @@ impl Constant {
 }
 
 #[repr(transparent)]
-#[derive(From)]
+#[derive(From, Clone, Copy)]
 pub struct Label(*mut sljit_label);
 
 impl Label {
@@ -77,7 +154,7 @@ impl Label {
 }
 
 #[repr(transparent)]
-#[derive(From)]
+#[derive(From, Clone, Copy)]
 pub struct Jump(*mut sljit_jump);
 
 impl Jump {
@@ -185,16 +262,7 @@ mod integration_tests {
     fn test_add3() {
         unsafe {
             let mut compiler = Compiler::new();
-            compiler.emit_enter(
-                0,
-                SLJIT_ARG_TYPE_W
-                    | (SLJIT_ARG_TYPE_W << 4)
-                    | (SLJIT_ARG_TYPE_W << (2 * 4))
-                    | (SLJIT_ARG_TYPE_W << (3 * 4)),
-                1,
-                3,
-                0,
-            );
+            compiler.emit_enter(0, arg_types!([W, W, W] -> W), 1, 3, 0);
             compiler.emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0);
 
             /* R0 = R0 + second */
@@ -214,6 +282,35 @@ mod integration_tests {
     }
 
     #[test]
+    fn test_arg_types() {
+        assert_eq!(
+            arg_types!([P, W, W] -> W),
+            SLJIT_ARG_TYPE_W
+                | (SLJIT_ARG_TYPE_P << 4)
+                | (SLJIT_ARG_TYPE_W << (2 * 4))
+                | (SLJIT_ARG_TYPE_W << (3 * 4))
+        );
+
+        assert_eq!(
+            arg_types!(RET_VOID -> [P, W, W]),
+            SLJIT_ARG_TYPE_RET_VOID
+                | (SLJIT_ARG_TYPE_P << 4)
+                | (SLJIT_ARG_TYPE_W << (2 * 4))
+                | (SLJIT_ARG_TYPE_W << (3 * 4))
+        );
+
+        assert_eq!(
+            arg_types!([P, W, W]),
+            SLJIT_ARG_TYPE_RET_VOID
+                | (SLJIT_ARG_TYPE_P << 4)
+                | (SLJIT_ARG_TYPE_W << (2 * 4))
+                | (SLJIT_ARG_TYPE_W << (3 * 4))
+        );
+
+        assert_eq!(arg_types!([]), SLJIT_ARG_TYPE_RET_VOID);
+    }
+
+    #[test]
     fn test_array_access() {
         extern "C" fn print_num(a: isize) {
             println!("num = {a}");
@@ -222,16 +319,7 @@ mod integration_tests {
         unsafe {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
-            compiler.emit_enter(
-                0,
-                SLJIT_ARG_TYPE_W
-                    | (SLJIT_ARG_TYPE_P << 4)
-                    | (SLJIT_ARG_TYPE_W << (2 * 4))
-                    | (SLJIT_ARG_TYPE_W << (3 * 4)),
-                4,
-                3,
-                0,
-            );
+            compiler.emit_enter(0, arg_types!([P, W, W] -> W), 4, 3, 0);
 
             /* S2 = 0 */
             compiler.emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0);
@@ -261,12 +349,7 @@ mod integration_tests {
             );
 
             /* print_num(R0)           */
-            compiler.emit_icall(
-                SLJIT_CALL,
-                SLJIT_ARG_TYPE_RET_VOID | (SLJIT_ARG_TYPE_W << 4),
-                SLJIT_IMM,
-                print_num as _,
-            );
+            compiler.emit_icall(SLJIT_CALL, arg_types!([W]), SLJIT_IMM, print_num as _);
             /* S2 += 1                 */
             compiler.emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1);
             /* jump loopstart          */
