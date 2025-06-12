@@ -6,4 +6,4 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sljit-sys = { version = "*", path = "../sljit-sys" }
+sljit-sys = { version = "*", path = "../sljit-sys", features = ["bindgen"] }

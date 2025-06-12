@@ -9,7 +9,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-derive_more = { version = "2.0.1", default-features = false, features = ["from"] }
+derive_more = { version = "2.0.1", default-features = false, features = ["from", "try_from", "error", "display"] }
 pastey = "0.1.0"
 
 [build-dependencies]
@@ -46,6 +46,9 @@ docs = []
 bindgen = ["dep:bindgen", "dep:ast-grep", "dep:gag", "dep:handlebars", "dep:serde", "dep:serde_json", "dep:cmd_lib"]
 force-verbose = []
 force-debug = []
+
+[dev-dependencies]
+tap = "1.0.1"
 
 [package.metadata.docs.rs]
 features = ["docs"]

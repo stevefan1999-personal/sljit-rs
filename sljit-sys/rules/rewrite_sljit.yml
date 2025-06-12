@@ -83,33 +83,47 @@ id: rewrite-with-return-type-jump
 language: rust
 ---
 rule:
+  any:
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler) -> sljit_s32;
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> sljit_s32;
+constraints:
+  FUNC:
+    regex: sljit_emit
+transform:
+  NAME:
+    replace:
+      source: "$FUNC"
+      replace: sljit_(.*)
+      by: "$1"
+  PARAMS:
+    replace:
+      source: "$$$ARGS"
+      replace: "(.*?): .*"
+      by: "$1,"
+fix: "#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> Result<&mut Self, ErrorCode> { ErrorCode::i32_as_result(unsafe { $FUNC(self.0, $PARAMS) }).and(Ok(self)) }"
+id: rewrite-emit-with-result
+language: rust
+---
+rule:
   all:
   - any:
     - pattern: |
         pub fn $FUNC(compiler: *mut sljit_compiler) -> $RET;
     - pattern: |
         pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
-  - not:
-      any:
-      - pattern: |
-          pub fn sljit_generate_code(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_const;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> *mut sljit_const;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_label;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> *mut sljit_label;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_put_label;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> *mut sljit_put_label;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_jump;
-      - pattern: |
-          pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> *mut sljit_jump;
-
+  not:
+    any:
+    - pattern: |
+        pub fn sljit_generate_code(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
+constraints:
+  FUNC:
+    not:
+      regex: "sljit_emit"
+  RET:
+    not:
+      regex: ".*?sljit_(const|(put_)?label|jump)"
 transform:
   NAME:
     replace:
@@ -133,10 +147,14 @@ rule:
         pub fn $FUNC(compiler: *mut sljit_compiler);
     - pattern: |
         pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS);
-  - not:
-      any:
-      - pattern: |
-          pub fn sljit_free_compiler(compiler: *mut sljit_compiler);
+  not:
+    any:
+    - pattern: |
+        pub fn sljit_free_compiler(compiler: *mut sljit_compiler, $$$ARGS);
+constraints:
+  FUNC:
+    not:
+      regex: "sljit_emit"
 transform:
   NAME:
     replace:

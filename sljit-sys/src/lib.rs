@@ -5,9 +5,41 @@
 
 use core::{ffi::CStr, ptr::null_mut, str::Utf8Error};
 
-use derive_more::From;
+use derive_more::{Display, Error, From, TryFrom};
+
+pub use pastey::paste as paste_priv;
 
 include!("./wrapper.rs");
+
+#[derive(TryFrom, From, Error, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum ErrorCode {
+    Success = SLJIT_SUCCESS,
+    Compiled = SLJIT_ERR_COMPILED,
+    AllocationFailed = SLJIT_ERR_ALLOC_FAILED,
+    ExecutableMemoryAllocationFailed = SLJIT_ERR_EX_ALLOC_FAILED,
+    Unsupported = SLJIT_ERR_UNSUPPORTED,
+    BadArgument = SLJIT_ERR_BAD_ARGUMENT,
+}
+
+impl ErrorCode {
+    #[inline(always)]
+    pub fn i32_as_result(this: i32) -> Result<(), ErrorCode> {
+        ErrorCode::try_from(this).map_or(Err(ErrorCode::Unsupported), Into::into)
+    }
+}
+
+impl Into<Result<(), ErrorCode>> for ErrorCode {
+    #[inline(always)]
+    fn into(self) -> Result<(), ErrorCode> {
+        if self == ErrorCode::Success {
+            Ok(())
+        } else {
+            Err(self)
+        }
+    }
+}
 
 #[inline(always)]
 pub fn has_cpu_feature(feature_type: sljit_s32) -> sljit_s32 {
@@ -104,13 +136,13 @@ macro_rules! arg_types {
     // Encode implementation: iterative bit packing
     (@encode $ret:tt; $acc:expr; $shift:expr;) => {
         // Base case: return type in bits 0-3, accumulated arguments in higher bits
-        (pastey::paste!{ [<SLJIT_ARG_TYPE_ $ret>] }) | ($acc)
+        ($crate::paste_priv!{ [<SLJIT_ARG_TYPE_ $ret>] }) | ($acc)
     };
 
     (@encode $ret:tt; $acc:expr; $shift:expr; $arg:tt $(, $rest:tt)*) => {
         $crate::arg_types!(@encode
             $ret;
-            $acc | ((pastey::paste!{ [<SLJIT_ARG_TYPE_ $arg>] }) << ($shift * 4));
+            $acc | (($crate::paste_priv!{ [<SLJIT_ARG_TYPE_ $arg>] }) << ($shift * 4));
             $shift + 1;
             $($rest),*
         )
@@ -151,6 +183,14 @@ impl Label {
     pub fn abs_addr(&self) -> sljit_uw {
         unsafe { sljit_get_label_abs_addr(self.0) }
     }
+
+    #[inline(always)]
+    pub fn set_to(&mut self, jump: &mut Jump) -> &mut Self {
+        unsafe {
+            sljit_set_label(jump.0, self.0);
+        }
+        self
+    }
 }
 
 #[repr(transparent)]
@@ -159,13 +199,19 @@ pub struct Jump(*mut sljit_jump);
 
 impl Jump {
     #[inline(always)]
-    pub fn set_label(&mut self, label: &Label) {
-        unsafe { sljit_set_label(self.0, label.0) }
+    pub fn set_label(&mut self, label: &mut Label) -> &mut Self {
+        unsafe {
+            sljit_set_label(self.0, label.0);
+        }
+        self
     }
 
     #[inline(always)]
-    pub fn set_target(&mut self, target: sljit_uw) {
-        unsafe { sljit_set_target(self.0, target) }
+    pub fn set_target(&mut self, target: sljit_uw) -> &mut Self {
+        unsafe {
+            sljit_set_target(self.0, target);
+        }
+        self
     }
 
     #[inline(always)]
@@ -254,31 +300,38 @@ include!("./generated.mid.rs");
 
 #[cfg(test)]
 mod integration_tests {
+    use tap::prelude::*;
+
     use core::{ffi::c_int, mem::transmute};
+    use std::error::Error;
 
     use super::*;
 
     #[test]
-    fn test_add3() {
+    fn test_add3() -> Result<(), Box<dyn Error>> {
         unsafe {
             let mut compiler = Compiler::new();
-            compiler.emit_enter(0, arg_types!([W, W, W] -> W), 1, 3, 0);
-            compiler.emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0);
-
-            /* R0 = R0 + second */
-            compiler.emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S1, 0);
-
-            /* R0 = R0 + third */
-            compiler.emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S2, 0);
-
-            /* This statement mov R0 to RETURN REG and return */
-            /* in fact, R0 is RETURN REG itself */
-            compiler.emit_return(SLJIT_MOV, SLJIT_R0, 0);
+            compiler
+                .emit_enter(0, arg_types!(W -> [W, W, W]), 1, 3, 0)?
+                .pipe_ref_mut(|compiler| {
+                    compiler
+                        .emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0)?
+                        /* R0 = R0 + second */
+                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S1, 0)?
+                        /* R0 = R0 + third */
+                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S2, 0)?
+                        /* This statement mov R0 to RETURN REG and return */
+                        /* in fact, R0 is RETURN REG itself */
+                        .emit_return(SLJIT_MOV, SLJIT_R0, 0)?;
+                    Ok::<_, ErrorCode>(())
+                })?;
 
             let code = compiler.generate_code();
             let func: fn(c_int, c_int, c_int) -> c_int = transmute(code.get());
             assert_eq!(func(4, 5, 6), 4 + 5 + 6);
         }
+
+        Ok(())
     }
 
     #[test]
@@ -311,61 +364,78 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_array_access() {
-        extern "C" fn print_num(a: isize) {
+    fn test_array_access() -> Result<(), Box<dyn Error>> {
+        extern "C" fn print_num(a: isize) -> isize {
             println!("num = {a}");
+            1
         }
 
         unsafe {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
-            compiler.emit_enter(0, arg_types!([P, W, W] -> W), 4, 3, 0);
 
-            /* S2 = 0 */
-            compiler.emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0);
-
-            /* S1 = narr */
-            compiler.emit_op1(
-                SLJIT_MOV,
-                SLJIT_S1,
-                0,
-                SLJIT_IMM,
-                arr.len().try_into().unwrap(),
-            );
-
-            /* loopstart:              */
-            let loop_start = compiler.emit_label();
-
-            /* S2 >= narr --> jumo out */
-            let mut out = compiler.emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0);
-
-            /* R0 = (long *)S0[S2];    */
-            compiler.emit_op1(
-                SLJIT_MOV,
-                SLJIT_R0,
-                0,
-                SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
-                SLJIT_WORD_SHIFT.into(),
-            );
-
-            /* print_num(R0)           */
-            compiler.emit_icall(SLJIT_CALL, arg_types!([W]), SLJIT_IMM, print_num as _);
-            /* S2 += 1                 */
-            compiler.emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1);
-            /* jump loopstart          */
-            compiler.emit_jump(SLJIT_JUMP).set_label(&loop_start);
-            /* out:                    */
-            out.set_label(&compiler.emit_label());
-            /* return S1               */
-            compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0);
-
+            compiler.pipe_ref_mut(|compiler| {
+                compiler
+                    /* S2 = 0 */
+                    .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
+                    /* S1 = narr */
+                    .emit_op1(
+                        SLJIT_MOV,
+                        SLJIT_S1,
+                        0,
+                        SLJIT_IMM,
+                        arr.len().try_into().unwrap(),
+                    )?;
+                /* loopstart:              */
+                compiler.emit_label().pipe_ref_mut(|loop_start| {
+                    /* S2 >= narr --> jump out */
+                    compiler
+                        .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
+                        .pipe(|out| {
+                            compiler
+                                /* R0 = (long *)S0[S2];    */
+                                .emit_op1(
+                                    SLJIT_MOV,
+                                    SLJIT_R0,
+                                    0,
+                                    SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
+                                    SLJIT_WORD_SHIFT.into(),
+                                )?
+                                /* print_num(R0)           */
+                                .emit_icall(
+                                    SLJIT_CALL,
+                                    arg_types!([W] -> W),
+                                    SLJIT_IMM,
+                                    print_num as _,
+                                )?
+                                /* S2 += 1                 */
+                                .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
+                                /* jump loopstart          */
+                                .emit_jump(SLJIT_JUMP)
+                                .set_label(loop_start);
+                            Ok::<_, ErrorCode>(out)
+                        })?
+                        .pipe_ref_mut(|out| {
+                            /* out:                    */
+                            compiler.emit_label().set_to(out);
+                            /* return S1               */
+                            compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
+                            Ok::<_, ErrorCode>(())
+                        })?;
+                    Ok::<_, ErrorCode>(())
+                })?;
+                Ok::<_, ErrorCode>(())
+            })?;
             let code = compiler.generate_code();
+
             let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());
 
             assert_eq!(
                 func(arr.as_ptr(), arr.len().try_into().unwrap(), 0),
                 arr.len().try_into().unwrap()
             );
+
+            Ok(())
         }
     }
 }
