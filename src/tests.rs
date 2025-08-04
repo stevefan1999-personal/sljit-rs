@@ -1,12 +1,108 @@
-use sljit_sys::SLJIT_WORD_SHIFT;
-
 use super::*;
 use crate::sys::{
-    SLJIT_ARG_TYPE_32, SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_P, SLJIT_ARG_TYPE_W, arg_types,
+    SLJIT_ARG_TYPE_32, SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_P, SLJIT_ARG_TYPE_W, SLJIT_WORD_SHIFT,
+    arg_types,
 };
 use core::ffi::c_int;
 use core::mem::transmute;
 use std::error::Error;
+
+fn simd_set(buf: &mut [u8], mut start: u8, length: i32) {
+    for i in 0..length {
+        buf[i as usize] = start;
+        start = start.wrapping_add(103);
+        if start == 0xaa {
+            start = 0xab;
+        }
+    }
+}
+
+fn check_simd_mov(buf: &[u8], mut start: u8, length: i32) -> bool {
+    for i in 0..length {
+        if buf[i as usize] != start {
+            return false;
+        }
+        start = start.wrapping_add(103);
+        if start == 0xaa {
+            start = 0xab;
+        }
+    }
+    true
+}
+
+#[test]
+fn test_simd1() -> Result<(), Box<dyn Error>> {
+    unsafe {
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
+        let mut data = [0u8; 63 + 880];
+
+        let buf_ptr = {
+            let mut buf_addr = data.as_mut_ptr() as usize;
+            buf_addr = (buf_addr + 63) & !63;
+            buf_addr as *mut u8
+        };
+
+        for i in 0..880 {
+            buf_ptr.add(i).write(0xaa);
+        }
+
+        simd_set(
+            &mut *core::slice::from_raw_parts_mut(buf_ptr.add(0), 16),
+            81,
+            16,
+        );
+        simd_set(
+            &mut *core::slice::from_raw_parts_mut(buf_ptr.add(65), 16),
+            213,
+            16,
+        );
+        simd_set(
+            &mut *core::slice::from_raw_parts_mut(buf_ptr.add(104), 16),
+            33,
+            16,
+        );
+        simd_set(
+            &mut *core::slice::from_raw_parts_mut(buf_ptr.add(160), 16),
+            140,
+            16,
+        );
+
+        emitter.emit_enter(
+            0,
+            arg_types!([P] -> W),
+            regs!(gp: 2, vector: 6),
+            regs!(gp: 2, vector: if sys::SLJIT_NUMBER_OF_SAVED_VECTOR_REGISTERS > 0 { 2 } else { 0 }),
+            64,
+        )?;
+
+        let type_ =
+            SimdReg::Reg128 as i32 | SimdElem::Elem8 as i32 | SimdMemAlign::Aligned128 as i32;
+        emitter.simd_mov(
+            SimdType::Load as i32 | type_,
+            VectorRegister::VR0,
+            mem(SavedRegister::S0),
+        )?;
+        emitter.simd_mov(
+            SimdType::Store as i32 | type_,
+            VectorRegister::VR0,
+            mem_offset(SavedRegister::S0, 32),
+        )?;
+
+        let code = compiler.generate_code();
+        let func: fn(*mut u8) = transmute(code.get());
+        println!("buf_ptr before: {:p}", buf_ptr);
+        func(buf_ptr);
+        println!("buf_ptr after: {:p}", buf_ptr);
+
+        assert!(check_simd_mov(
+            &*core::slice::from_raw_parts(buf_ptr.add(32), 16),
+            81,
+            16
+        ));
+    }
+    Ok(())
+}
 
 #[test]
 fn test_add3_emitter() -> Result<(), Box<dyn Error>> {
@@ -142,7 +238,7 @@ fn test_conv_f64_from_s32_emitter() -> Result<(), Box<dyn Error>> {
             .emit_enter(
                 0,
                 arg_types!(F64 -> [32]),
-                regs! { float: 1 },
+                regs! { gp: 1, float: 1 },
                 regs! { gp: 1 },
                 0,
             )?
@@ -155,6 +251,7 @@ fn test_conv_f64_from_s32_emitter() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+
 #[test]
 fn test_branch_emitter() -> Result<(), Box<dyn Error>> {
     unsafe {
@@ -183,15 +280,25 @@ fn test_branch_extended() -> Result<(), Box<dyn Error>> {
     const TEST_CASES: usize = 44;
     let mut buf = [100u8; TEST_CASES];
     let compare_buf: [u8; TEST_CASES] = [
-        1, 1, 2, 2, 1, 2, 2, 1, 1, 2, 2, 2, 1, 2, 2, 1, 1, 2, 2, 2, 1, 2, 2, 2, 2, 1, 1, 2, 2,
-        2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 2, 1, 1, 2,
+        1, 1, 2, 2, 1, 2, 2, 1, 1, 2, 2, 2, 1, 2, 2, 1, 1, 2, 2, 2, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2,
+        1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 2, 1, 1, 2,
     ];
     let mut data: [isize; 4] = [32, -9, 43, -13];
 
     unsafe {
         let mut compiler = Compiler::new();
         let mut emitter = Emitter::new(&mut compiler);
-        emitter.emit_enter(0, arg_types!([P, P]), regs!(3), regs!(2), 0)?;
+        emitter.emit_enter(
+            0,
+            arg_types!([P, P]),
+            regs! {
+                gp: 3,
+            },
+            regs! {
+                gp: 2,
+            },
+            0,
+        )?;
         emitter.sub(0, SavedRegister::S0, SavedRegister::S0, 1)?;
 
         let cmp_test = |emitter: &mut Emitter,
