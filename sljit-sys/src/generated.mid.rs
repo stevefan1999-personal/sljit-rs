@@ -1,5 +1,51 @@
 impl Compiler {
     #[inline(always)]
+    pub fn free_compiler(&mut self) {
+        unsafe { sljit_free_compiler(self.0) }
+    }
+    #[inline(always)]
+    pub fn set_compiler_memory_error(&mut self) {
+        unsafe { sljit_set_compiler_memory_error(self.0) }
+    }
+    #[inline(always)]
+    pub fn compiler_set_user_data(&mut self, user_data: *mut ::core::ffi::c_void) {
+        unsafe { sljit_compiler_set_user_data(self.0, user_data) }
+    }
+    #[inline(always)]
+    pub fn set_current_flags(&mut self, current_flags: sljit_s32) {
+        unsafe { sljit_set_current_flags(self.0, current_flags) }
+    }
+    #[inline(always)]
+    pub fn emit_label(&mut self) -> Label {
+        unsafe { sljit_emit_label(self.0) }.into()
+    }
+    #[inline(always)]
+    pub fn emit_aligned_label(
+        &mut self,
+        alignment: sljit_s32,
+        buffers: *mut sljit_read_only_buffer,
+    ) -> Label {
+        unsafe { sljit_emit_aligned_label(self.0, alignment, buffers) }.into()
+    }
+    #[inline(always)]
+    pub fn get_first_label(&mut self) -> Label {
+        unsafe { sljit_get_first_label(self.0) }.into()
+    }
+    #[inline(always)]
+    pub fn emit_const(
+        &mut self,
+        op: sljit_s32,
+        dst: sljit_s32,
+        dstw: sljit_sw,
+        init_value: sljit_sw,
+    ) -> Constant {
+        unsafe { sljit_emit_const(self.0, op, dst, dstw, init_value) }.into()
+    }
+    #[inline(always)]
+    pub fn get_first_const(&mut self) -> Constant {
+        unsafe { sljit_get_first_const(self.0) }.into()
+    }
+    #[inline(always)]
     pub fn emit_jump(&mut self, type_: sljit_s32) -> Jump {
         unsafe { sljit_emit_jump(self.0, type_) }.into()
     }
@@ -97,52 +143,6 @@ impl Compiler {
     #[inline(always)]
     pub fn serialize_compiler(&mut self, options: sljit_s32, size: *mut sljit_uw) -> *mut sljit_uw {
         unsafe { sljit_serialize_compiler(self.0, options, size) }
-    }
-    #[inline(always)]
-    pub fn free_compiler(&mut self) {
-        unsafe { sljit_free_compiler(self.0) }
-    }
-    #[inline(always)]
-    pub fn set_compiler_memory_error(&mut self) {
-        unsafe { sljit_set_compiler_memory_error(self.0) }
-    }
-    #[inline(always)]
-    pub fn compiler_set_user_data(&mut self, user_data: *mut ::core::ffi::c_void) {
-        unsafe { sljit_compiler_set_user_data(self.0, user_data) }
-    }
-    #[inline(always)]
-    pub fn set_current_flags(&mut self, current_flags: sljit_s32) {
-        unsafe { sljit_set_current_flags(self.0, current_flags) }
-    }
-    #[inline(always)]
-    pub fn emit_label(&mut self) -> Label {
-        unsafe { sljit_emit_label(self.0) }.into()
-    }
-    #[inline(always)]
-    pub fn emit_aligned_label(
-        &mut self,
-        alignment: sljit_s32,
-        buffers: *mut sljit_read_only_buffer,
-    ) -> Label {
-        unsafe { sljit_emit_aligned_label(self.0, alignment, buffers) }.into()
-    }
-    #[inline(always)]
-    pub fn get_first_label(&mut self) -> Label {
-        unsafe { sljit_get_first_label(self.0) }.into()
-    }
-    #[inline(always)]
-    pub fn emit_const(
-        &mut self,
-        op: sljit_s32,
-        dst: sljit_s32,
-        dstw: sljit_sw,
-        init_value: sljit_sw,
-    ) -> Constant {
-        unsafe { sljit_emit_const(self.0, op, dst, dstw, init_value) }.into()
-    }
-    #[inline(always)]
-    pub fn get_first_const(&mut self) -> Constant {
-        unsafe { sljit_get_first_const(self.0) }.into()
     }
     #[inline(always)]
     pub fn emit_enter(

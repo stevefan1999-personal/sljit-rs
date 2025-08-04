@@ -1,0 +1,23 @@
+rule:
+  any:
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler) -> sljit_s32;
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> sljit_s32;
+constraints:
+  FUNC:
+    regex: sljit_emit
+transform:
+  NAME:
+    replace:
+      source: "$FUNC"
+      replace: sljit_(.*)
+      by: "$1"
+  PARAMS:
+    replace:
+      source: "$$$ARGS"
+      replace: "(.*?): .*"
+      by: "$1,"
+fix: "#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> Result<&mut Self, ErrorCode> { ErrorCode::i32_as_result(unsafe { $FUNC(self.0, $PARAMS) }).and(Ok(self)) }"
+id: rewrite-emit-with-result
+language: rust

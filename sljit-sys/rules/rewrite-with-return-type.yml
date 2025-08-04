@@ -1,0 +1,33 @@
+rule:
+  all:
+  - any:
+    - pattern: |
+        pub fn $FUNC(compiler: *mut sljit_compiler) -> $RET;
+    - pattern: |
+        pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
+  not:
+    any:
+    - pattern: |
+        pub fn sljit_generate_code(compiler: *mut sljit_compiler, $$$ARGS) -> $RET;
+constraints:
+  FUNC:
+    not:
+      regex: "sljit_emit"
+  RET:
+    not:
+      regex: ".*?sljit_(const|(put_)?label|jump)"
+transform:
+  NAME:
+    replace:
+      source: $FUNC
+      replace: "sljit_(.*)"
+      by: "$1"
+
+  PARAMS:
+    replace:
+      source: $$$ARGS
+      replace: "(.*?): .*"
+      by: "$1,"
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> $RET { unsafe { $FUNC(self.0, $PARAMS) } }'
+id: rewrite-with-return-type
+language: rust

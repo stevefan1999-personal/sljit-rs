@@ -41,6 +41,180 @@ impl Into<Result<(), ErrorCode>> for ErrorCode {
     }
 }
 
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum OpSrc {
+    FastReturn = SLJIT_FAST_RETURN,
+    SkipFramesBeforeFastReturn = SLJIT_SKIP_FRAMES_BEFORE_FAST_RETURN,
+    PrefetchL1 = SLJIT_PREFETCH_L1,
+    PrefetchL2 = SLJIT_PREFETCH_L2,
+    PrefetchL3 = SLJIT_PREFETCH_L3,
+    PrefetchOnce = SLJIT_PREFETCH_ONCE,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum OpDst {
+    FastEnter = SLJIT_FAST_ENTER,
+    GetReturnAddress = SLJIT_GET_RETURN_ADDRESS,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Op0 {
+    Breakpoint = SLJIT_BREAKPOINT,
+    Nop = SLJIT_NOP,
+    LmulUw = SLJIT_LMUL_UW,
+    LmulSw = SLJIT_LMUL_SW,
+    DivmodUw = SLJIT_DIVMOD_UW,
+    DivmodU32 = SLJIT_DIVMOD_U32,
+    DivmodSw = SLJIT_DIVMOD_SW,
+    DivmodS32 = SLJIT_DIVMOD_S32,
+    DivUw = SLJIT_DIV_UW,
+    DivU32 = SLJIT_DIV_U32,
+    DivSw = SLJIT_DIV_SW,
+    DivS32 = SLJIT_DIV_S32,
+    MemoryBarrier = SLJIT_MEMORY_BARRIER,
+    Endbr = SLJIT_ENDBR,
+    SkipFramesBeforeReturn = SLJIT_SKIP_FRAMES_BEFORE_RETURN,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Op1 {
+    Mov = SLJIT_MOV,
+    MovU8 = SLJIT_MOV_U8,
+    Mov32U8 = SLJIT_MOV32_U8,
+    MovS8 = SLJIT_MOV_S8,
+    Mov32S8 = SLJIT_MOV32_S8,
+    MovU16 = SLJIT_MOV_U16,
+    Mov32U16 = SLJIT_MOV32_U16,
+    MovS16 = SLJIT_MOV_S16,
+    Mov32S16 = SLJIT_MOV32_S16,
+    MovU32 = SLJIT_MOV_U32,
+    MovS32 = SLJIT_MOV_S32,
+    Mov32 = SLJIT_MOV32,
+    MovP = SLJIT_MOV_P,
+    Clz = SLJIT_CLZ,
+    Clz32 = SLJIT_CLZ32,
+    Ctz = SLJIT_CTZ,
+    Ctz32 = SLJIT_CTZ32,
+    Rev = SLJIT_REV,
+    Rev32 = SLJIT_REV32,
+    RevU16 = SLJIT_REV_U16,
+    Rev32U16 = SLJIT_REV32_U16,
+    RevS16 = SLJIT_REV_S16,
+    Rev32S16 = SLJIT_REV32_S16,
+    RevU32 = SLJIT_REV_U32,
+    RevS32 = SLJIT_REV_S32,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Op2 {
+    Add = SLJIT_ADD,
+    Add32 = SLJIT_ADD32,
+    Addc = SLJIT_ADDC,
+    Addc32 = SLJIT_ADDC32,
+    Sub = SLJIT_SUB,
+    Sub32 = SLJIT_SUB32,
+    Subc = SLJIT_SUBC,
+    Subc32 = SLJIT_SUBC32,
+    Mul = SLJIT_MUL,
+    Mul32 = SLJIT_MUL32,
+    And = SLJIT_AND,
+    And32 = SLJIT_AND32,
+    Or = SLJIT_OR,
+    Or32 = SLJIT_OR32,
+    Xor = SLJIT_XOR,
+    Xor32 = SLJIT_XOR32,
+    Shl = SLJIT_SHL,
+    Shl32 = SLJIT_SHL32,
+    Mshl = SLJIT_MSHL,
+    Mshl32 = SLJIT_MSHL32,
+    Lshr = SLJIT_LSHR,
+    Lshr32 = SLJIT_LSHR32,
+    Mlshr = SLJIT_MLSHR,
+    Mlshr32 = SLJIT_MLSHR32,
+    Ashr = SLJIT_ASHR,
+    Ashr32 = SLJIT_ASHR32,
+    Mashr = SLJIT_MASHR,
+    Mashr32 = SLJIT_MASHR32,
+    Rotl = SLJIT_ROTL,
+    Rotl32 = SLJIT_ROTL32,
+    Rotr = SLJIT_ROTR,
+    Rotr32 = SLJIT_ROTR32,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Op2r {
+    Muladd = SLJIT_MULADD,
+    Muladd32 = SLJIT_MULADD32,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Fop1 {
+    MovF64 = SLJIT_MOV_F64,
+    MovF32 = SLJIT_MOV_F32,
+    ConvF64FromF32 = SLJIT_CONV_F64_FROM_F32,
+    ConvF32FromF64 = SLJIT_CONV_F32_FROM_F64,
+    ConvSwFromF64 = SLJIT_CONV_SW_FROM_F64,
+    ConvSwFromF32 = SLJIT_CONV_SW_FROM_F32,
+    ConvS32FromF64 = SLJIT_CONV_S32_FROM_F64,
+    ConvS32FromF32 = SLJIT_CONV_S32_FROM_F32,
+    ConvF64FromSw = SLJIT_CONV_F64_FROM_SW,
+    ConvF32FromSw = SLJIT_CONV_F32_FROM_SW,
+    ConvF64FromS32 = SLJIT_CONV_F64_FROM_S32,
+    ConvF32FromS32 = SLJIT_CONV_F32_FROM_S32,
+    ConvF64FromUw = SLJIT_CONV_F64_FROM_UW,
+    ConvF32FromUw = SLJIT_CONV_F32_FROM_UW,
+    ConvF64FromU32 = SLJIT_CONV_F64_FROM_U32,
+    ConvF32FromU32 = SLJIT_CONV_F32_FROM_U32,
+    CmpF64 = SLJIT_CMP_F64,
+    CmpF32 = SLJIT_CMP_F32,
+    NegF64 = SLJIT_NEG_F64,
+    NegF32 = SLJIT_NEG_F32,
+    AbsF64 = SLJIT_ABS_F64,
+    AbsF32 = SLJIT_ABS_F32,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Fop2 {
+    AddF64 = SLJIT_ADD_F64,
+    AddF32 = SLJIT_ADD_F32,
+    SubF64 = SLJIT_SUB_F64,
+    SubF32 = SLJIT_SUB_F32,
+    MulF64 = SLJIT_MUL_F64,
+    MulF32 = SLJIT_MUL_F32,
+    DivF64 = SLJIT_DIV_F64,
+    DivF32 = SLJIT_DIV_F32,
+}
+
+#[derive(TryFrom, From, Display, Clone, Copy, Debug, PartialEq)]
+#[try_from(repr)]
+#[repr(i32)]
+pub enum Fop2r {
+    CopysignF64 = SLJIT_COPYSIGN_F64,
+    CopysignF32 = SLJIT_COPYSIGN_F32,
+}
+
+pub const SLJIT_SET_F_EQUAL: i32 = (SLJIT_F_EQUAL) << 10;
+pub const SLJIT_SET_F_NOT_EQUAL: i32 = (SLJIT_F_NOT_EQUAL) << 10;
+pub const SLJIT_SET_F_LESS: i32 = (SLJIT_F_LESS) << 10;
+pub const SLJIT_SET_F_GREATER_EQUAL: i32 = (SLJIT_F_GREATER_EQUAL) << 10;
+pub const SLJIT_SET_F_GREATER: i32 = (SLJIT_F_GREATER) << 10;
+pub const SLJIT_SET_F_LESS_EQUAL: i32 = (SLJIT_F_LESS_EQUAL) << 10;
 #[inline(always)]
 pub fn has_cpu_feature(feature_type: sljit_s32) -> sljit_s32 {
     unsafe { sljit_has_cpu_feature(feature_type) }
@@ -110,7 +284,10 @@ macro_rules! arg_types {
 
     // Public interface: arguments with default void return
     ([$($args:tt),*]) => {
-        $crate::arg_types!(@internal RET_VOID; $($args),*)
+        {
+            use $crate::SLJIT_ARG_TYPE_RET_VOID;
+            $crate::arg_types!(@internal RET_VOID; $($args),*)
+        }
     };
 
     // Alternative syntax: return type first
@@ -151,6 +328,19 @@ macro_rules! arg_types {
     // Helper: count arguments at compile time
     (@count;) => { 0 };
     (@count; $head:tt $(, $tail:tt)*) => { 1 + $crate::arg_types!(@count; $($tail),*) };
+}
+
+#[macro_export]
+macro_rules! mem {
+    () => {
+        $crate::SLJIT_MEM
+    };
+    ($r1:expr) => {
+        $crate::SLJIT_MEM | ($r1)
+    };
+    ($r1:expr, $r2:expr) => {
+        $crate::SLJIT_MEM | ($r1) | (($r2) << 8)
+    };
 }
 
 #[repr(transparent)]
@@ -276,6 +466,11 @@ impl Compiler {
     pub fn new() -> Self {
         Self(unsafe { sljit_create_compiler(null_mut()) })
     }
+
+    #[inline(always)]
+    pub fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
 }
 
 impl Compiler {
@@ -365,11 +560,6 @@ mod integration_tests {
 
     #[test]
     fn test_array_access() -> Result<(), Box<dyn Error>> {
-        extern "C" fn print_num(a: isize) -> isize {
-            println!("num = {a}");
-            1
-        }
-
         unsafe {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
@@ -402,12 +592,87 @@ mod integration_tests {
                                     SLJIT_WORD_SHIFT.into(),
                                 )?
                                 /* print_num(R0)           */
-                                .emit_icall(
-                                    SLJIT_CALL,
-                                    arg_types!([W] -> W),
-                                    SLJIT_IMM,
-                                    print_num as _,
+                                .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
+                                    extern "C" fn print_num(a: isize) -> isize {
+                                        println!("num = {a}");
+                                        1
+                                    }
+
+                                    print_num as _
+                                })?
+                                /* S2 += 1                 */
+                                .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
+                                /* jump loopstart          */
+                                .emit_jump(SLJIT_JUMP)
+                                .set_label(loop_start);
+                            Ok::<_, ErrorCode>(out)
+                        })?
+                        .pipe_ref_mut(|out| {
+                            /* out:                    */
+                            compiler.emit_label().set_to(out);
+                            /* return S1               */
+                            compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
+                            Ok::<_, ErrorCode>(())
+                        })?;
+                    Ok::<_, ErrorCode>(())
+                })?;
+                Ok::<_, ErrorCode>(())
+            })?;
+            let code = compiler.generate_code();
+
+            let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());
+
+            assert_eq!(
+                func(arr.as_ptr(), arr.len().try_into().unwrap(), 0),
+                arr.len().try_into().unwrap()
+            );
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_mem() -> Result<(), Box<dyn Error>> {
+        unsafe {
+            let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
+            let mut compiler = Compiler::new();
+
+            compiler.pipe_ref_mut(|compiler| {
+                compiler
+                    /* S2 = 0 */
+                    .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
+                    /* S1 = narr */
+                    .emit_op1(
+                        SLJIT_MOV,
+                        SLJIT_S1,
+                        0,
+                        SLJIT_IMM,
+                        arr.len().try_into().unwrap(),
+                    )?;
+                /* loopstart:              */
+                compiler.emit_label().pipe_ref_mut(|loop_start| {
+                    /* S2 >= narr --> jump out */
+                    compiler
+                        .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
+                        .pipe(|out| {
+                            compiler
+                                /* R0 = (long *)S0[S2];    */
+                                .emit_op1(
+                                    SLJIT_MOV,
+                                    SLJIT_R0,
+                                    0,
+                                    SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
+                                    SLJIT_WORD_SHIFT.into(),
                                 )?
+                                /* print_num(R0)           */
+                                .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
+                                    extern "C" fn print_num(a: isize) -> isize {
+                                        println!("num = {a}");
+                                        1
+                                    }
+
+                                    print_num as _
+                                })?
                                 /* S2 += 1                 */
                                 .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
                                 /* jump loopstart          */

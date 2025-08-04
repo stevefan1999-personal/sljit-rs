@@ -1,0 +1,20 @@
+rule:
+  any:
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler) -> *mut sljit_put_label;
+  - pattern: |
+      pub fn $FUNC(compiler: *mut sljit_compiler, $$$ARGS) -> *mut sljit_put_label;
+transform:
+  NAME:
+    replace:
+      source: $FUNC
+      replace: "sljit_(.*)"
+      by: "$1"
+  PARAMS:
+    replace:
+      source: $$$ARGS
+      replace: "(.*?): .*"
+      by: "$1,"
+fix: '#[inline(always)] pub fn $NAME(&mut self, $$$ARGS) -> PutLabel { unsafe { $FUNC(self.0, $PARAMS) }.into() }'
+id: rewrite-with-return-type-put-label
+language: rust
