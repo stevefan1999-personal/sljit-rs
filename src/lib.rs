@@ -128,69 +128,60 @@ pub enum JumpType {
 #[derive(Clone, Copy, Debug)]
 pub struct Operand(i32, sljit_sw);
 
-pub trait GpRegister: Into<Operand> {}
-impl GpRegister for ScratchRegister {}
-impl GpRegister for SavedRegister {}
+macro_rules! define_register_types {
+    (
+        gp: [$($gp_reg:ty),*],
+        float: [$($float_reg:ty),*],
+    ) => {
+        pub trait GpRegister: Into<Operand> {}
+        $(
+            impl GpRegister for $gp_reg {}
+        )*
 
-pub trait FloatRegisterType: Into<Operand> {}
-impl FloatRegisterType for FloatRegister {}
-impl FloatRegisterType for SavedFloatRegister {}
+        pub trait FloatRegisterType: Into<Operand> {}
+        $(
+            impl FloatRegisterType for $float_reg {}
+        )*
 
-impl From<ScratchRegister> for Operand {
-    #[inline(always)]
-    fn from(reg: ScratchRegister) -> Self {
-        Self(reg as i32, 0)
-    }
+        $(
+            impl From<$gp_reg> for Operand {
+                #[inline(always)]
+                fn from(reg: $gp_reg) -> Self {
+                    Self(reg as i32, 0)
+                }
+            }
+        )*
+
+        $(
+            impl From<$float_reg> for Operand {
+                #[inline(always)]
+                fn from(reg: $float_reg) -> Self {
+                    Self(reg as i32, 0)
+                }
+            }
+        )*
+    };
 }
 
-impl From<SavedRegister> for Operand {
-    #[inline(always)]
-    fn from(reg: SavedRegister) -> Self {
-        Self(reg as i32, 0)
-    }
+define_register_types! {
+    gp: [ScratchRegister, SavedRegister],
+    float: [FloatRegister, SavedFloatRegister],
 }
 
-impl From<FloatRegister> for Operand {
-    #[inline(always)]
-    fn from(reg: FloatRegister) -> Self {
-        Self(reg as i32, 0)
-    }
+macro_rules! impl_from_imm_for_operand {
+    ($($ty:ty),*) => {
+        $(
+            impl From<$ty> for Operand {
+                #[inline(always)]
+                fn from(imm: $ty) -> Self {
+                    Self(sys::SLJIT_IMM, imm as sljit_sw)
+                }
+            }
+        )*
+    };
 }
 
-impl From<SavedFloatRegister> for Operand {
-    #[inline(always)]
-    fn from(reg: SavedFloatRegister) -> Self {
-        Self(reg as i32, 0)
-    }
-}
-
-impl From<i32> for Operand {
-    #[inline(always)]
-    fn from(imm: i32) -> Self {
-        Self(sys::SLJIT_IMM, imm as sljit_sw)
-    }
-}
-
-impl From<u32> for Operand {
-    #[inline(always)]
-    fn from(imm: u32) -> Self {
-        Self(sys::SLJIT_IMM, imm as sljit_sw)
-    }
-}
-
-impl From<isize> for Operand {
-    #[inline(always)]
-    fn from(imm: isize) -> Self {
-        Self(sys::SLJIT_IMM, imm as sljit_sw)
-    }
-}
-
-impl From<usize> for Operand {
-    #[inline(always)]
-    fn from(imm: usize) -> Self {
-        Self(sys::SLJIT_IMM, imm as sljit_sw)
-    }
-}
+impl_from_imm_for_operand!(i32, u32, isize, usize);
 
 impl From<Operand> for (i32, sljit_sw) {
     #[inline(always)]
