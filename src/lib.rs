@@ -2,114 +2,238 @@ use sljit_sys::{self as sys, Compiler, ErrorCode, sljit_sw};
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// A scratch register.
 pub enum ScratchRegister {
+    /// Scratch register 0.
     R0 = crate::sys::SLJIT_R0,
+    /// Scratch register 1.
     R1 = crate::sys::SLJIT_R1,
+    /// Scratch register 2.
     R2 = crate::sys::SLJIT_R2,
+    /// Scratch register 3.
     R3 = crate::sys::SLJIT_R3,
+    /// Scratch register 4.
     R4 = crate::sys::SLJIT_R4,
+    /// Scratch register 5.
     R5 = crate::sys::SLJIT_R5,
+    /// Scratch register 6.
     R6 = crate::sys::SLJIT_R6,
+    /// Scratch register 7.
     R7 = crate::sys::SLJIT_R7,
+    /// Scratch register 8.
     R8 = crate::sys::SLJIT_R8,
+    /// Scratch register 9.
     R9 = crate::sys::SLJIT_R9,
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// A saved register.
 pub enum SavedRegister {
+    /// Saved register 0.
     S0 = crate::sys::SLJIT_S0,
+    /// Saved register 1.
     S1 = crate::sys::SLJIT_S1,
+    /// Saved register 2.
     S2 = crate::sys::SLJIT_S2,
+    /// Saved register 3.
     S3 = crate::sys::SLJIT_S3,
+    /// Saved register 4.
     S4 = crate::sys::SLJIT_S4,
+    /// Saved register 5.
     S5 = crate::sys::SLJIT_S5,
+    /// Saved register 6.
     S6 = crate::sys::SLJIT_S6,
+    /// Saved register 7.
     S7 = crate::sys::SLJIT_S7,
+    /// Saved register 8.
     S8 = crate::sys::SLJIT_S8,
+    /// Saved register 9.
     S9 = crate::sys::SLJIT_S9,
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// A float register.
 pub enum FloatRegister {
+    /// Float register 0.
     FR0 = crate::sys::SLJIT_FR0,
+    /// Float register 1.
     FR1 = crate::sys::SLJIT_FR1,
+    /// Float register 2.
     FR2 = crate::sys::SLJIT_FR2,
+    /// Float register 3.
     FR3 = crate::sys::SLJIT_FR3,
+    /// Float register 4.
     FR4 = crate::sys::SLJIT_FR4,
+    /// Float register 5.
     FR5 = crate::sys::SLJIT_FR5,
+    /// Float register 6.
     FR6 = crate::sys::SLJIT_FR6,
+    /// Float register 7.
     FR7 = crate::sys::SLJIT_FR7,
+    /// Float register 8.
     FR8 = crate::sys::SLJIT_FR8,
+    /// Float register 9.
     FR9 = crate::sys::SLJIT_FR9,
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// A saved float register.
 pub enum SavedFloatRegister {
+    /// Saved float register 0.
     FS0 = crate::sys::SLJIT_FS0,
+    /// Saved float register 1.
     FS1 = crate::sys::SLJIT_FS1,
+    /// Saved float register 2.
     FS2 = crate::sys::SLJIT_FS2,
+    /// Saved float register 3.
     FS3 = crate::sys::SLJIT_FS3,
+    /// Saved float register 4.
     FS4 = crate::sys::SLJIT_FS4,
+    /// Saved float register 5.
     FS5 = crate::sys::SLJIT_FS5,
+    /// Saved float register 6.
     FS6 = crate::sys::SLJIT_FS6,
+    /// Saved float register 7.
     FS7 = crate::sys::SLJIT_FS7,
+    /// Saved float register 8.
     FS8 = crate::sys::SLJIT_FS8,
+    /// Saved float register 9.
     FS9 = crate::sys::SLJIT_FS9,
 }
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// A vector register.
+pub enum VectorRegister {
+    /// Vector register 0.
+    VR0 = crate::sys::SLJIT_VR0,
+    /// Vector register 1.
+    VR1 = crate::sys::SLJIT_VR1,
+    /// Vector register 2.
+    VR2 = crate::sys::SLJIT_VR2,
+    /// Vector register 3.
+    VR3 = crate::sys::SLJIT_VR3,
+    /// Vector register 4.
+    VR4 = crate::sys::SLJIT_VR4,
+    /// Vector register 5.
+    VR5 = crate::sys::SLJIT_VR5,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A saved vector register.
+pub enum SavedVectorRegister {
+    /// Saved vector register 0.
+    VS0 = crate::sys::SLJIT_VS0,
+    /// Saved vector register 1.
+    VS1 = crate::sys::SLJIT_VS1,
+    /// Saved vector register 2.
+    VS2 = crate::sys::SLJIT_VS2,
+    /// Saved vector register 3.
+    VS3 = crate::sys::SLJIT_VS3,
+    /// Saved vector register 4.
+    VS4 = crate::sys::SLJIT_VS4,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A condition for a jump.
 pub enum Condition {
+    /// The values are equal.
     Equal = sys::SLJIT_EQUAL,
+    /// The values are not equal.
     NotEqual = sys::SLJIT_NOT_EQUAL,
+    /// The first value is less than the second value (unsigned).
     Less = sys::SLJIT_LESS,
+    /// The first value is less than the second value (unsigned, 32-bit).
     Less32 = sys::SLJIT_LESS | sys::SLJIT_32,
+    /// The first value is greater than or equal to the second value (unsigned).
     GreaterEqual = sys::SLJIT_GREATER_EQUAL,
+    /// The first value is greater than or equal to the second value (unsigned, 32-bit).
     GreaterEqual32 = sys::SLJIT_GREATER_EQUAL | sys::SLJIT_32,
+    /// The first value is greater than the second value (unsigned).
     Greater = sys::SLJIT_GREATER,
+    /// The first value is greater than the second value (unsigned, 32-bit).
     Greater32 = sys::SLJIT_GREATER | sys::SLJIT_32,
+    /// The first value is less than or equal to the second value (unsigned).
     LessEqual = sys::SLJIT_LESS_EQUAL,
+    /// The first value is less than or equal to the second value (unsigned, 32-bit).
     LessEqual32 = sys::SLJIT_LESS_EQUAL | sys::SLJIT_32,
+    /// The first value is less than the second value (signed).
     SigLess = sys::SLJIT_SIG_LESS,
+    /// The first value is less than the second value (signed, 32-bit).
     SigLess32 = sys::SLJIT_SIG_LESS | sys::SLJIT_32,
+    /// The first value is greater than or equal to the second value (signed).
     SigGreaterEqual = sys::SLJIT_SIG_GREATER_EQUAL,
+    /// The first value is greater than or equal to the second value (signed, 32-bit).
     SigGreaterEqual32 = sys::SLJIT_SIG_GREATER_EQUAL | sys::SLJIT_32,
+    /// The first value is greater than the second value (signed).
     SigGreater = sys::SLJIT_SIG_GREATER,
+    /// The first value is greater than the second value (signed, 32-bit).
     SigGreater32 = sys::SLJIT_SIG_GREATER | sys::SLJIT_32,
+    /// The first value is less than or equal to the second value (signed).
     SigLessEqual = sys::SLJIT_SIG_LESS_EQUAL,
+    /// The first value is less than or equal to the second value (signed, 32-bit).
     SigLessEqual32 = sys::SLJIT_SIG_LESS_EQUAL | sys::SLJIT_32,
+    /// An overflow occurred.
     Overflow = sys::SLJIT_OVERFLOW,
+    /// An overflow did not occur.
     NotOverflow = sys::SLJIT_NOT_OVERFLOW,
+    /// A carry occurred.
     Carry = sys::SLJIT_CARRY,
+    /// A carry did not occur.
     NotCarry = sys::SLJIT_NOT_CARRY,
+    /// An atomic store was successful.
     AtomicStored = sys::SLJIT_ATOMIC_STORED,
+    /// An atomic store was not successful.
     AtomicNotStored = sys::SLJIT_ATOMIC_NOT_STORED,
+    /// The float values are equal.
     FEqual = sys::SLJIT_F_EQUAL,
+    /// The float values are not equal.
     FNotEqual = sys::SLJIT_F_NOT_EQUAL,
+    /// The first float value is less than the second float value.
     FLess = sys::SLJIT_F_LESS,
+    /// The first float value is greater than or equal to the second float value.
     FGreaterEqual = sys::SLJIT_F_GREATER_EQUAL,
+    /// The first float value is greater than the second float value.
     FGreater = sys::SLJIT_F_GREATER,
+    /// The first float value is less than or equal to the second float value.
     FLessEqual = sys::SLJIT_F_LESS_EQUAL,
+    /// The float values are unordered.
     Unordered = sys::SLJIT_UNORDERED,
+    /// The float values are ordered.
     Ordered = sys::SLJIT_ORDERED,
+    /// The float values are ordered and equal.
     OrderedEqual = sys::SLJIT_ORDERED_EQUAL,
+    /// The float values are unordered or not equal.
     UnorderedOrNotEqual = sys::SLJIT_UNORDERED_OR_NOT_EQUAL,
+    /// The float values are ordered and the first is less than the second.
     OrderedLess = sys::SLJIT_ORDERED_LESS,
+    /// The float values are unordered or the first is greater than or equal to the second.
     UnorderedOrGreaterEqual = sys::SLJIT_UNORDERED_OR_GREATER_EQUAL,
+    /// The float values are ordered and the first is greater than the second.
     OrderedGreater = sys::SLJIT_ORDERED_GREATER,
+    /// The float values are unordered or the first is less than or equal to the second.
     UnorderedOrLessEqual = sys::SLJIT_UNORDERED_OR_LESS_EQUAL,
+    /// The float values are unordered or equal.
     UnorderedOrEqual = sys::SLJIT_UNORDERED_OR_EQUAL,
+    /// The float values are ordered and not equal.
     OrderedNotEqual = sys::SLJIT_ORDERED_NOT_EQUAL,
+    /// The float values are unordered or the first is less than the second.
     UnorderedOrLess = sys::SLJIT_UNORDERED_OR_LESS,
+    /// The float values are ordered and the first is greater than or equal to the second.
     OrderedGreaterEqual = sys::SLJIT_ORDERED_GREATER_EQUAL,
+    /// The float values are unordered or the first is greater than the second.
     UnorderedOrGreater = sys::SLJIT_UNORDERED_OR_GREATER,
+    /// The float values are ordered and the first is less than or equal to the second.
     OrderedLessEqual = sys::SLJIT_ORDERED_LESS_EQUAL,
 }
 
 impl Condition {
+    /// Inverts the condition.
     #[inline(always)]
     pub fn invert(self) -> Self {
         unsafe { core::mem::transmute((self as i32) ^ 1) }
@@ -118,14 +242,20 @@ impl Condition {
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// The type of a jump.
 pub enum JumpType {
+    /// A simple jump.
     Jump = sys::SLJIT_JUMP,
+    /// A fast call.
     FastCall = sys::SLJIT_FAST_CALL,
+    /// A call.
     Call = sys::SLJIT_CALL,
+    /// A call with a register argument.
     CallRegArg = sys::SLJIT_CALL_REG_ARG,
 }
 
 #[derive(Clone, Copy, Debug)]
+/// An operand for an instruction.
 pub struct Operand(i32, sljit_sw);
 
 macro_rules! define_register_types {
@@ -133,15 +263,22 @@ macro_rules! define_register_types {
         gp: [$($gp_reg:ty),*],
         float: [$($float_reg:ty),*],
     ) => {
+        /// A general-purpose register.
         pub trait GpRegister: Into<Operand> {}
         $(
             impl GpRegister for $gp_reg {}
         )*
 
+        /// A float register.
         pub trait FloatRegisterType: Into<Operand> {}
         $(
             impl FloatRegisterType for $float_reg {}
         )*
+
+        /// A vector register.
+        pub trait VectorRegisterType: Into<Operand> {}
+        impl VectorRegisterType for VectorRegister {}
+        impl VectorRegisterType for SavedVectorRegister {}
 
         $(
             impl From<$gp_reg> for Operand {
@@ -160,6 +297,20 @@ macro_rules! define_register_types {
                 }
             }
         )*
+
+        impl From<VectorRegister> for Operand {
+            #[inline(always)]
+            fn from(reg: VectorRegister) -> Self {
+                Self(reg as i32, 0)
+            }
+        }
+
+        impl From<SavedVectorRegister> for Operand {
+            #[inline(always)]
+            fn from(reg: SavedVectorRegister) -> Self {
+                Self(reg as i32, 0)
+            }
+        }
     };
 }
 
@@ -190,6 +341,7 @@ impl From<Operand> for (i32, sljit_sw) {
     }
 }
 
+/// A memory operand.
 #[inline(always)]
 pub fn mem(base: impl Into<Operand>) -> Operand {
     let mut op = base.into();
@@ -197,6 +349,7 @@ pub fn mem(base: impl Into<Operand>) -> Operand {
     op
 }
 
+/// A memory operand with an offset.
 #[inline(always)]
 pub fn mem_offset(base: impl Into<Operand>, offset: i32) -> Operand {
     let mut op = base.into();
@@ -205,6 +358,7 @@ pub fn mem_offset(base: impl Into<Operand>, offset: i32) -> Operand {
     op
 }
 
+/// A memory operand with an indexed shift.
 #[inline(always)]
 pub fn mem_indexed_shift(
     base: impl Into<Operand>,
@@ -387,27 +541,103 @@ macro_rules! define_emitter_ops {
     };
 }
 
+macro_rules! define_simd_vreg_srcdst {
+    ($($(#[doc = $doc:literal])* $name:ident, $compiler_fn:ident;)*) => {
+        $(
+            $(#[doc = $doc])*
+            #[inline(always)]
+            pub fn $name(&mut self, type_: i32, vreg: impl Into<Operand>, srcdst: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
+                let (vreg, _) = vreg.into().into();
+                let (srcdst, srcdstw) = srcdst.into().into();
+                self.compiler.$compiler_fn(type_, vreg, srcdst, srcdstw)?;
+                Ok(self)
+            }
+        )*
+    };
+}
+
+macro_rules! define_simd_vreg_idx_srcdst {
+    ($($(#[doc = $doc:literal])* $name:ident, $compiler_fn:ident;)*) => {
+        $(
+            $(#[doc = $doc])*
+            #[inline(always)]
+            pub fn $name(&mut self, type_: i32, vreg: impl Into<Operand>, lane_index: i32, srcdst: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
+                let (vreg, _) = vreg.into().into();
+                let (srcdst, srcdstw) = srcdst.into().into();
+                self.compiler.$compiler_fn(type_, vreg, lane_index, srcdst, srcdstw)?;
+                Ok(self)
+            }
+        )*
+    };
+}
+
+macro_rules! define_simd_vreg_src_idx {
+    ($($(#[doc = $doc:literal])* $name:ident, $compiler_fn:ident;)*) => {
+        $(
+            $(#[doc = $doc])*
+            #[inline(always)]
+            pub fn $name(&mut self, type_: i32, vreg: impl Into<Operand>, src: impl Into<Operand>, src_lane_index: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
+                let (vreg, _) = vreg.into().into();
+                let (src, _) = src.into().into();
+                let (src_lane_index, _) = src_lane_index.into().into();
+                self.compiler.$compiler_fn(type_, vreg, src, src_lane_index)?;
+                Ok(self)
+            }
+        )*
+    };
+}
+
+macro_rules! define_simd_op2_vreg {
+    ($($(#[doc = $doc:literal])* $name:ident, $compiler_fn:ident;)*) => {
+        $(
+            $(#[doc = $doc])*
+            #[inline(always)]
+            pub fn $name(&mut self, type_: i32, dst_vreg: impl Into<Operand>, src1_vreg: impl Into<Operand>, src2: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
+                let (dst_vreg, _) = dst_vreg.into().into();
+                let (src1_vreg, _) = src1_vreg.into().into();
+                let (src2, src2w) = src2.into().into();
+                self.compiler.$compiler_fn(type_, dst_vreg, src1_vreg, src2, src2w)?;
+                Ok(self)
+            }
+        )*
+    };
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
+/// An operation for a return instruction.
 pub enum ReturnOp {
+    /// Move a value.
     Mov = sys::Op1::Mov as i32,
+    /// Move an unsigned 8-bit value.
     MovU8 = sys::Op1::MovU8 as i32,
+    /// Move a signed 8-bit value.
     MovS8 = sys::Op1::MovS8 as i32,
+    /// Move an unsigned 16-bit value.
     MovU16 = sys::Op1::MovU16 as i32,
+    /// Move a signed 16-bit value.
     MovS16 = sys::Op1::MovS16 as i32,
+    /// Move an unsigned 32-bit value.
     MovU32 = sys::Op1::MovU32 as i32,
+    /// Move a signed 32-bit value.
     MovS32 = sys::Op1::MovS32 as i32,
+    /// Move a 32-bit value.
     Mov32 = sys::Op1::Mov32 as i32,
+    /// Move a pointer.
     MovP = sys::Op1::MovP as i32,
+    /// Move a 64-bit float.
     MovF64 = sys::Fop1::MovF64 as i32,
+    /// Move a 32-bit float.
     MovF32 = sys::Fop1::MovF32 as i32,
 }
 
+/// An emitter for instructions.
 pub struct Emitter<'a> {
     compiler: &'a mut Compiler,
 }
 
 impl<'a> Emitter<'a> {
+    /// Creates a new emitter.
     pub fn new(compiler: &'a mut Compiler) -> Self {
         Self { compiler }
     }
@@ -663,6 +893,39 @@ impl<'a> Emitter<'a> {
         get_return_address, sys::OpDst::GetReturnAddress as i32, op_dst;
     }
 
+    /// Emits an `ENTER` instruction, which is the entry point of a function.
+    ///
+    /// The `options` argument can be used to pass configuration options to the SLJIT compiler,
+    /// which affects the generated code until another `emit_enter` or `set_context` is called.
+    ///
+    /// The function argument list is specified by the `arg_types` parameter.
+    ///
+    /// The register set used by the function must be declared as well. The number of scratch and
+    /// saved registers available to the function must be passed to `emit_enter`.
+    ///
+    /// `emit_enter` is also capable of allocating a stack space for local data. The `local_size`
+    /// argument contains the size in bytes of this local area, and it can be accessed using
+    /// `mem(SP)`. The memory area is uninitialized.
+    ///
+    /// # Parameters
+    ///
+    /// * `options` - A bitmask of options.
+    /// * `arg_types` - A bitmask of argument types.
+    /// * `scratches` - The number of scratch registers to use for temporary values.
+    /// * `saveds` - The number of saved registers to use for parameters.
+    /// * `local_size` - The size of the local stack frame.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use sljit::{Compiler, Emitter, args, regs};
+    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// // Function with 3 arguments of type sljit_sw and 1 return value of type sljit_sw.
+    /// // The function uses 1 scratch register and 3 saved registers.
+    /// // No local stack frame is allocated.
+    /// emitter.emit_enter(0, args!(W, W, W, W), regs!(1), regs!(3), 0);
+    /// ```
     pub fn emit_enter(
         &mut self,
         options: i32,
@@ -676,14 +939,65 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Emits a `JUMP` instruction.
+    ///
+    /// The destination is not set, only the type of the jump.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the jump.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use sljit::{Compiler, Emitter, JumpType};
+    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// let mut jump = emitter.jump(JumpType::Jump).unwrap();
+    /// let mut label = emitter.put_label().unwrap();
+    /// jump.set_label(&mut label);
+    /// ```
     pub fn jump(&mut self, type_: JumpType) -> Result<sys::Jump, ErrorCode> {
         Ok(self.compiler.emit_jump(type_ as i32))
     }
 
+    /// Emits a C compiler (ABI) compatible function call.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the call.
+    /// * `arg_types` - A bitmask of argument types.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use sljit::{Compiler, Emitter, JumpType, args};
+    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// let mut call = emitter.call(JumpType::Call, args!(W, W)).unwrap();
+    /// ```
     pub fn call(&mut self, type_: JumpType, arg_types: i32) -> Result<sys::Jump, ErrorCode> {
         Ok(self.compiler.emit_call(type_ as i32, arg_types))
     }
 
+    /// Integer comparison.
+    ///
+    /// In most architectures it is implemented as a compare operation followed by a jump.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the comparison.
+    /// * `src1` - The first source operand.
+    /// * `src2` - The second source operand.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use sljit::{Compiler, Emitter, Condition, ScratchRegister::R0};
+    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// let mut jump = emitter.cmp(Condition::Equal, R0, 5).unwrap();
+    /// ```
     pub fn cmp(
         &mut self,
         type_: Condition,
@@ -697,6 +1011,24 @@ impl<'a> Emitter<'a> {
             .emit_cmp(type_ as i32, src1, src1w, src2, src2w))
     }
 
+    /// Floating point comparison.
+    ///
+    /// In most architectures it is implemented as a compare operation followed by a jump.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the comparison.
+    /// * `src1` - The first source operand.
+    /// * `src2` - The second source operand.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use sljit::{Compiler, Emitter, Condition, FloatRegister::FR0};
+    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// let mut jump = emitter.fcmp(Condition::FEqual, FR0, 5.0f64).unwrap();
+    /// ```
     pub fn fcmp(
         &mut self,
         type_: Condition,
@@ -710,12 +1042,25 @@ impl<'a> Emitter<'a> {
             .emit_fcmp(type_ as i32, src1, src1w, src2, src2w))
     }
 
+    /// Emit an indirect jump or fast call.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the jump.
+    /// * `src` - The source operand.
     pub fn ijump(&mut self, type_: i32, src: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_ijump(type_, src, srcw)?;
         Ok(self)
     }
 
+    /// Emit a C compiler (ABI) compatible function call.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the call.
+    /// * `arg_types` - A bitmask of argument types.
+    /// * `src` - The source operand.
     pub fn icall(
         &mut self,
         type_: i32,
@@ -727,6 +1072,13 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Perform an operation using the conditional flags as the second argument.
+    ///
+    /// # Parameters
+    ///
+    /// * `op` - The operation.
+    /// * `dst` - The destination operand.
+    /// * `type_` - The type of the operation.
     pub fn op_flags(
         &mut self,
         op: i32,
@@ -738,6 +1090,15 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Emit a conditional select instruction which moves `src1` to `dst_reg`,
+    /// if the condition is satisfied, or `src2_reg` to `dst_reg` otherwise.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the selection.
+    /// * `dst_reg` - The destination register.
+    /// * `src1` - The first source operand.
+    /// * `src2_reg` - The second source register.
     pub fn select(
         &mut self,
         type_: Condition,
@@ -753,6 +1114,15 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Emit a conditional floating point select instruction which moves `src1` to `dst_freg`,
+    /// if the condition is satisfied, or `src2_freg` to `dst_freg` otherwise.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the selection.
+    /// * `dst_freg` - The destination float register.
+    /// * `src1` - The first source operand.
+    /// * `src2_freg` - The second source float register.
     pub fn fselect(
         &mut self,
         type_: Condition,
@@ -768,6 +1138,15 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Emits a conditional branch.
+    ///
+    /// # Parameters
+    ///
+    /// * `type_` - The type of the comparison.
+    /// * `src1` - The first source operand.
+    /// * `src2` - The second source operand.
+    /// * `then_branch` - The closure to execute if the condition is true.
+    /// * `else_branch` - The closure to execute if the condition is false.
     pub fn branch<T, E>(
         &mut self,
         type_: Condition,
@@ -791,6 +1170,13 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    /// Emits a `CONST` instruction.
+    ///
+    /// # Parameters
+    ///
+    /// * `op` - The operation.
+    /// * `dst` - The destination operand.
+    /// * `init_value` - The initial value.
     pub fn const_(
         &mut self,
         op: i32,
@@ -801,27 +1187,47 @@ impl<'a> Emitter<'a> {
         Ok(self.compiler.emit_const(op, dst, dstw, init_value))
     }
 
+    /// Emits a `LABEL` instruction.
     pub fn put_label(&mut self) -> Result<sys::Label, ErrorCode> {
         Ok(self.compiler.emit_label())
     }
 
+    /// Return to the caller function.
+    ///
+    /// # Parameters
+    ///
+    /// * `op` - The operation.
+    /// * `src` - The source operand.
     pub fn emit_return(&mut self, op: ReturnOp, src: impl Into<Operand>) -> Result<(), ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_return(op as i32, src, srcw)?;
         Ok(())
     }
 
+    /// Emits a `RETURN` instruction with no return value.
     pub fn return_void(&mut self) -> Result<(), ErrorCode> {
         self.compiler.emit_return_void()?;
         Ok(())
     }
 
+    /// Restores the saved registers and frees the stack area, then the execution
+    /// continues from the address specified by the source operand.
+    ///
+    /// # Parameters
+    ///
+    /// * `src` - The source operand.
     pub fn return_to(&mut self, src: impl Into<Operand>) -> Result<(), ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_return_to(src, srcw)?;
         Ok(())
     }
 
+    /// Copies the base address of `SP` + `offset` to `dst`.
+    ///
+    /// # Parameters
+    ///
+    /// * `dst` - The destination operand.
+    /// * `offset` - The offset from the local base.
     pub fn get_local_base(
         &mut self,
         dst: impl Into<Operand>,
@@ -831,6 +1237,122 @@ impl<'a> Emitter<'a> {
         self.compiler.get_local_base(dst, dstw, offset);
         Ok(self)
     }
+
+    define_simd_vreg_srcdst! {
+        /// Emits a SIMD move instruction.
+        simd_mov, emit_simd_mov;
+        /// Emits a SIMD replicate instruction.
+        simd_replicate, emit_simd_replicate;
+        /// Emits a SIMD extend instruction.
+        simd_extend, emit_simd_extend;
+        /// Emits a SIMD sign instruction.
+        simd_sign, emit_simd_sign;
+    }
+
+    define_simd_vreg_idx_srcdst! {
+        /// Emits a SIMD lane move instruction.
+        simd_lane_mov, emit_simd_lane_mov;
+    }
+
+    define_simd_vreg_src_idx! {
+        /// Emits a SIMD lane replicate instruction.
+        simd_lane_replicate, emit_simd_lane_replicate;
+    }
+
+    define_simd_op2_vreg! {
+        /// Emits a SIMD 2-operand instruction.
+        simd_op2, emit_simd_op2;
+    }
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD operation type.
+pub enum SimdType {
+    /// Load from memory.
+    Load = sys::SLJIT_SIMD_LOAD,
+    /// Store to memory.
+    Store = sys::SLJIT_SIMD_STORE,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD register type.
+pub enum SimdReg {
+    /// A 64-bit register.
+    Reg64 = sys::SLJIT_SIMD_REG_64,
+    /// A 128-bit register.
+    Reg128 = sys::SLJIT_SIMD_REG_128,
+    /// A 256-bit register.
+    Reg256 = sys::SLJIT_SIMD_REG_256,
+    /// A 512-bit register.
+    Reg512 = sys::SLJIT_SIMD_REG_512,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD element type.
+pub enum SimdElem {
+    /// An 8-bit element.
+    Elem8 = sys::SLJIT_SIMD_ELEM_8,
+    /// A 16-bit element.
+    Elem16 = sys::SLJIT_SIMD_ELEM_16,
+    /// A 32-bit element.
+    Elem32 = sys::SLJIT_SIMD_ELEM_32,
+    /// A 64-bit element.
+    Elem64 = sys::SLJIT_SIMD_ELEM_64,
+    /// A 128-bit element.
+    Elem128 = sys::SLJIT_SIMD_ELEM_128,
+    /// A 256-bit element.
+    Elem256 = sys::SLJIT_SIMD_ELEM_256,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD memory alignment.
+pub enum SimdMemAlign {
+    /// Unaligned memory.
+    Unaligned = sys::SLJIT_SIMD_MEM_UNALIGNED,
+    /// 16-byte aligned memory.
+    Aligned16 = sys::SLJIT_SIMD_MEM_ALIGNED_16,
+    /// 32-byte aligned memory.
+    Aligned32 = sys::SLJIT_SIMD_MEM_ALIGNED_32,
+    /// 64-byte aligned memory.
+    Aligned64 = sys::SLJIT_SIMD_MEM_ALIGNED_64,
+    /// 128-byte aligned memory.
+    Aligned128 = sys::SLJIT_SIMD_MEM_ALIGNED_128,
+    /// 256-byte aligned memory.
+    Aligned256 = sys::SLJIT_SIMD_MEM_ALIGNED_256,
+    /// 512-byte aligned memory.
+    Aligned512 = sys::SLJIT_SIMD_MEM_ALIGNED_512,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD extend operation.
+pub enum SimdExtend {
+    /// Signed extension.
+    Signed = sys::SLJIT_SIMD_EXTEND_SIGNED,
+    /// Extend to 16 bits.
+    Extend16 = sys::SLJIT_SIMD_EXTEND_16,
+    /// Extend to 32 bits.
+    Extend32 = sys::SLJIT_SIMD_EXTEND_32,
+    /// Extend to 64 bits.
+    Extend64 = sys::SLJIT_SIMD_EXTEND_64,
+}
+
+#[repr(i32)]
+#[derive(Clone, Copy, Debug)]
+/// A SIMD 2-operand operation.
+pub enum SimdOp2 {
+    /// Bitwise AND.
+    And = sys::SLJIT_SIMD_OP2_AND,
+    /// Bitwise OR.
+    Or = sys::SLJIT_SIMD_OP2_OR,
+    /// Bitwise XOR.
+    Xor = sys::SLJIT_SIMD_OP2_XOR,
+    /// Shuffle.
+    Shuffle = sys::SLJIT_SIMD_OP2_SHUFFLE,
 }
 
 #[cfg(test)]
