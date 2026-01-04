@@ -508,14 +508,18 @@ mod integration_tests {
         unsafe {
             let mut compiler = Compiler::new();
             compiler
-                .emit_enter(0, arg_types!(W -> [W, W, W]), 1, 3, 0)?
+                .emit_enter(0, arg_types!(W -> [W, W, W]), 1, 3, 0)
+                .unwrap()
                 .pipe_ref_mut(|compiler| {
                     compiler
-                        .emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0)?
+                        .emit_op1(SLJIT_MOV, SLJIT_R0, 0, SLJIT_S0, 0)
+                        .unwrap()
                         /* R0 = R0 + second */
-                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S1, 0)?
+                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S1, 0)
+                        .unwrap()
                         /* R0 = R0 + third */
-                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S2, 0)?
+                        .emit_op2(SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_S2, 0)
+                        .unwrap()
                         /* This statement mov R0 to RETURN REG and return */
                         /* in fact, R0 is RETURN REG itself */
                         .emit_return(SLJIT_MOV, SLJIT_R0, 0)?;
@@ -564,60 +568,62 @@ mod integration_tests {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
 
-            compiler.pipe_ref_mut(|compiler| {
-                compiler
-                    /* S2 = 0 */
-                    .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
-                    /* S1 = narr */
-                    .emit_op1(
-                        SLJIT_MOV,
-                        SLJIT_S1,
-                        0,
-                        SLJIT_IMM,
-                        arr.len().try_into().unwrap(),
-                    )?;
-                /* loopstart:              */
-                compiler.emit_label().pipe_ref_mut(|loop_start| {
-                    /* S2 >= narr --> jump out */
+            compiler
+                .pipe_ref_mut(|compiler| {
                     compiler
-                        .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
-                        .pipe(|out| {
-                            compiler
-                                /* R0 = (long *)S0[S2];    */
-                                .emit_op1(
-                                    SLJIT_MOV,
-                                    SLJIT_R0,
-                                    0,
-                                    SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
-                                    SLJIT_WORD_SHIFT.into(),
-                                )?
-                                /* print_num(R0)           */
-                                .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
-                                    extern "C" fn print_num(a: isize) -> isize {
-                                        println!("num = {a}");
-                                        1
-                                    }
+                        /* S2 = 0 */
+                        .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
+                        /* S1 = narr */
+                        .emit_op1(
+                            SLJIT_MOV,
+                            SLJIT_S1,
+                            0,
+                            SLJIT_IMM,
+                            arr.len().try_into().unwrap(),
+                        )?;
+                    /* loopstart:              */
+                    compiler.emit_label().pipe_ref_mut(|loop_start| {
+                        /* S2 >= narr --> jump out */
+                        compiler
+                            .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
+                            .pipe(|out| {
+                                compiler
+                                    /* R0 = (long *)S0[S2];    */
+                                    .emit_op1(
+                                        SLJIT_MOV,
+                                        SLJIT_R0,
+                                        0,
+                                        SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
+                                        SLJIT_WORD_SHIFT.into(),
+                                    )?
+                                    /* print_num(R0)           */
+                                    .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
+                                        extern "C" fn print_num(a: isize) -> isize {
+                                            println!("num = {a}");
+                                            1
+                                        }
 
-                                    print_num as _
-                                })?
-                                /* S2 += 1                 */
-                                .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
-                                /* jump loopstart          */
-                                .emit_jump(SLJIT_JUMP)
-                                .set_label(loop_start);
-                            Ok::<_, ErrorCode>(out)
-                        })?
-                        .pipe_ref_mut(|out| {
-                            /* out:                    */
-                            compiler.emit_label().set_to(out);
-                            /* return S1               */
-                            compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
-                            Ok::<_, ErrorCode>(())
-                        })?;
+                                        print_num as _
+                                    })?
+                                    /* S2 += 1                 */
+                                    .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
+                                    /* jump loopstart          */
+                                    .emit_jump(SLJIT_JUMP)
+                                    .set_label(loop_start);
+                                Ok::<_, ErrorCode>(out)
+                            })?
+                            .pipe_ref_mut(|out| {
+                                /* out:                    */
+                                compiler.emit_label().set_to(out);
+                                /* return S1               */
+                                compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
+                                Ok::<_, ErrorCode>(())
+                            })?;
+                        Ok::<_, ErrorCode>(())
+                    })?;
                     Ok::<_, ErrorCode>(())
-                })?;
-                Ok::<_, ErrorCode>(())
-            })?;
+                })
+                .unwrap();
             let code = compiler.generate_code();
 
             let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());
@@ -635,60 +641,62 @@ mod integration_tests {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
 
-            compiler.pipe_ref_mut(|compiler| {
-                compiler
-                    /* S2 = 0 */
-                    .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
-                    /* S1 = narr */
-                    .emit_op1(
-                        SLJIT_MOV,
-                        SLJIT_S1,
-                        0,
-                        SLJIT_IMM,
-                        arr.len().try_into().unwrap(),
-                    )?;
-                /* loopstart:              */
-                compiler.emit_label().pipe_ref_mut(|loop_start| {
-                    /* S2 >= narr --> jump out */
+            compiler
+                .pipe_ref_mut(|compiler| {
                     compiler
-                        .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
-                        .pipe(|out| {
-                            compiler
-                                /* R0 = (long *)S0[S2];    */
-                                .emit_op1(
-                                    SLJIT_MOV,
-                                    SLJIT_R0,
-                                    0,
-                                    SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
-                                    SLJIT_WORD_SHIFT.into(),
-                                )?
-                                /* print_num(R0)           */
-                                .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
-                                    extern "C" fn print_num(a: isize) -> isize {
-                                        println!("num = {a}");
-                                        1
-                                    }
+                        /* S2 = 0 */
+                        .emit_op2(SLJIT_XOR, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_S2, 0)?
+                        /* S1 = narr */
+                        .emit_op1(
+                            SLJIT_MOV,
+                            SLJIT_S1,
+                            0,
+                            SLJIT_IMM,
+                            arr.len().try_into().unwrap(),
+                        )?;
+                    /* loopstart:              */
+                    compiler.emit_label().pipe_ref_mut(|loop_start| {
+                        /* S2 >= narr --> jump out */
+                        compiler
+                            .emit_cmp(SLJIT_GREATER_EQUAL, SLJIT_S2, 0, SLJIT_S1, 0)
+                            .pipe(|out| {
+                                compiler
+                                    /* R0 = (long *)S0[S2];    */
+                                    .emit_op1(
+                                        SLJIT_MOV,
+                                        SLJIT_R0,
+                                        0,
+                                        SLJIT_MEM | SLJIT_S0 | (SLJIT_S2 << 8),
+                                        SLJIT_WORD_SHIFT.into(),
+                                    )?
+                                    /* print_num(R0)           */
+                                    .emit_icall(SLJIT_CALL, arg_types!([W] -> W), SLJIT_IMM, {
+                                        extern "C" fn print_num(a: isize) -> isize {
+                                            println!("num = {a}");
+                                            1
+                                        }
 
-                                    print_num as _
-                                })?
-                                /* S2 += 1                 */
-                                .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
-                                /* jump loopstart          */
-                                .emit_jump(SLJIT_JUMP)
-                                .set_label(loop_start);
-                            Ok::<_, ErrorCode>(out)
-                        })?
-                        .pipe_ref_mut(|out| {
-                            /* out:                    */
-                            compiler.emit_label().set_to(out);
-                            /* return S1               */
-                            compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
-                            Ok::<_, ErrorCode>(())
-                        })?;
+                                        print_num as _
+                                    })?
+                                    /* S2 += 1                 */
+                                    .emit_op2(SLJIT_ADD, SLJIT_S2, 0, SLJIT_S2, 0, SLJIT_IMM, 1)?
+                                    /* jump loopstart          */
+                                    .emit_jump(SLJIT_JUMP)
+                                    .set_label(loop_start);
+                                Ok::<_, ErrorCode>(out)
+                            })?
+                            .pipe_ref_mut(|out| {
+                                /* out:                    */
+                                compiler.emit_label().set_to(out);
+                                /* return S1               */
+                                compiler.emit_return(SLJIT_MOV, SLJIT_S1, 0)?;
+                                Ok::<_, ErrorCode>(())
+                            })?;
+                        Ok::<_, ErrorCode>(())
+                    })?;
                     Ok::<_, ErrorCode>(())
-                })?;
-                Ok::<_, ErrorCode>(())
-            })?;
+                })
+                .unwrap();
             let code = compiler.generate_code();
 
             let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());

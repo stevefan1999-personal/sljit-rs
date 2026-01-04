@@ -370,6 +370,24 @@ pub fn mem_indexed_shift(
     Operand(sys::mem!(base_op.0, index_op.0), shift as sljit_sw)
 }
 
+/// A memory operand with an indexed register (no shift).
+#[inline(always)]
+pub fn mem_indexed(base: impl Into<Operand>, index: impl Into<Operand>) -> Operand {
+    mem_indexed_shift(base, index, 0)
+}
+
+/// A memory operand with an absolute address.
+#[inline(always)]
+pub fn mem_abs(addr: isize) -> Operand {
+    Operand(sys::mem!(), addr as sljit_sw)
+}
+
+/// A memory operand relative to the stack pointer.
+#[inline(always)]
+pub fn mem_sp() -> Operand {
+    Operand(sys::mem!(sys::SLJIT_SP), 0)
+}
+
 /// A macro to build the register argument for `emit_enter`.
 ///
 /// # Examples
