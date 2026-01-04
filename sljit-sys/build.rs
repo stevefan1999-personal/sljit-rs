@@ -202,7 +202,14 @@ fn generate_mid_level_binding(out_path: PathBuf) -> miette::Result<()> {
     .map_err(|e| miette!(e))?;
 
     let data: Vec<MatchJSON> = serde_json::from_reader(buf).into_diagnostic()?;
-    let replacements: Vec<Cow<str>> = data.into_iter().flat_map(|x| x.replacement).collect();
+    let mut replacements: Vec<Cow<str>> = data.into_iter().flat_map(|x| x.replacement).collect();
+
+    // 2. SORT replacements by function name (NEW)
+    replacements.sort_by(|a, b| {
+        let a_name = extract_fn_name(a);
+        let b_name = extract_fn_name(b);
+        a_name.cmp(&b_name)
+    });
 
     let mut hbs = Handlebars::new();
     hbs.register_escape_fn(handlebars::no_escape);
@@ -223,6 +230,18 @@ impl Compiler {
     std::fs::write(&path, rendered).into_diagnostic()?;
     run_cmd!(rustfmt $path).into_diagnostic()?;
     Ok(())
+}
+
+fn extract_fn_name(method_code: &str) -> Option<&str> {
+    // Extract function name from something like:
+    // pub fn emit_op1(...) {...}
+    if let Some(start) = method_code.find("pub fn ")
+        && let Some(paren) = (&method_code[start + 7..]).find('(')
+    {
+        Some((&method_code[start + 7..])[..paren].trim())
+    } else {
+        None
+    }
 }
 
 fn main() -> miette::Result<()> {
