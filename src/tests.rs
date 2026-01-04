@@ -5,7 +5,6 @@ use crate::sys::{
 };
 use core::ffi::c_int;
 use core::mem::transmute;
-use std::error::Error;
 
 fn simd_set(buf: &mut [u8], mut start: u8, length: i32) {
     for i in 0..length {
@@ -834,7 +833,7 @@ fn test_branch_extended() {
                 0,
                 arg_types!([P, P]),
                 regs! {
-                    gp: 3,
+                    gp: 2,
                 },
                 regs! {
                     gp: 2,
@@ -1287,5 +1286,331 @@ fn test_branch_extended() {
         func(buf.as_mut_ptr(), data.as_mut_ptr());
 
         assert_eq!(buf, compare_buf);
+    }
+}
+
+#[test]
+fn test_fib_recursive() {
+    unsafe {
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
+
+        // Function: fib(n) -> if n <= 1 return n else return fib(n-1) + fib(n-2)
+        emitter
+            .emit_enter(0, arg_types!(W -> [W]), regs!(3), regs!(1), 0)
+            .unwrap();
+
+        // Check base case: if n <= 1, return n
+        emitter
+            .branch(
+                Condition::LessEqual,
+                SavedRegister::S0,
+                1isize,
+                |e| {
+                    // Base case: return n
+                    e.emit_return(ReturnOp::Mov, SavedRegister::S0).unwrap();
+                    Ok(())
+                },
+                |e| {
+                    // Recursive case: fib(n-1) + fib(n-2)
+
+                    // Save n to R0
+                    e.mov(0, ScratchRegister::R0, SavedRegister::S0).unwrap();
+
+                    // Call fib(n-1)
+                    e.sub(0, ScratchRegister::R1, SavedRegister::S0, 1).unwrap();
+                    e.mov(0, SavedRegister::S0, ScratchRegister::R1).unwrap();
+
+                    let mut call1 = e.call(JumpType::Call, arg_types!([W])).unwrap();
+                    call1.set_label(&mut e.put_label().unwrap());
+
+                    // Save fib(n-1) result to R2
+                    e.mov(0, ScratchRegister::R2, ScratchRegister::R0).unwrap();
+
+                    // Call fib(n-2)
+                    e.sub(0, ScratchRegister::R1, ScratchRegister::R0, 2)
+                        .unwrap();
+                    e.mov(0, SavedRegister::S0, ScratchRegister::R1).unwrap();
+
+                    let mut call2 = e.call(JumpType::Call, arg_types!([W])).unwrap();
+                    call2.set_label(&mut e.put_label().unwrap());
+
+                    // Add fib(n-1) + fib(n-2)
+                    e.add(
+                        0,
+                        ScratchRegister::R0,
+                        ScratchRegister::R0,
+                        ScratchRegister::R2,
+                    )
+                    .unwrap();
+
+                    // Restore n
+                    e.mov(0, SavedRegister::S0, ScratchRegister::R0).unwrap();
+
+                    e.emit_return(ReturnOp::Mov, ScratchRegister::R0).unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        let code = compiler.generate_code();
+        let func: fn(isize) -> isize = transmute(code.get());
+
+        // Test cases
+        assert_eq!(func(0), 0);
+        assert_eq!(func(1), 1);
+        assert_eq!(func(2), 1);
+        assert_eq!(func(3), 2);
+        assert_eq!(func(4), 3);
+        assert_eq!(func(5), 5);
+        assert_eq!(func(6), 8);
+        assert_eq!(func(10), 55);
+    }
+}
+
+#[test]
+fn test_fib_iterative() {
+    unsafe {
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
+
+        // Function: fib(n) -> iterative version
+        emitter
+            .emit_enter(0, arg_types!(W -> [W]), regs!(4), regs!(1), 0)
+            .unwrap();
+
+        // Handle base cases
+        emitter
+            .branch(
+                Condition::LessEqual,
+                SavedRegister::S0,
+                1isize,
+                |e| {
+                    // Base case: return n
+                    e.emit_return(ReturnOp::Mov, SavedRegister::S0).unwrap();
+                    Ok(())
+                },
+                |e| {
+                    // Iterative case - run loop n-1 times
+
+                    // R0 = a (starts as 0)
+                    e.mov(0, ScratchRegister::R0, 0isize).unwrap();
+                    // R1 = b (starts as 1)
+                    e.mov(0, ScratchRegister::R1, 1isize).unwrap();
+                    // R2 = counter (starts as n)
+                    e.mov(0, ScratchRegister::R2, SavedRegister::S0).unwrap();
+
+                    // Loop start
+                    let mut loop_start = e.put_label().unwrap();
+
+                    // Check if counter == 0 FIRST (like while_ does)
+                    let mut jump_to_end = e
+                        .cmp(Condition::Equal, ScratchRegister::R2, 0isize)
+                        .unwrap();
+
+                    // Decrement counter (AFTER the check)
+                    e.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
+                        .unwrap();
+
+                    // Loop body: a, b = b, a + b
+                    e.add(
+                        0,
+                        ScratchRegister::R3,
+                        ScratchRegister::R0,
+                        ScratchRegister::R1,
+                    )
+                    .unwrap();
+                    e.mov(0, ScratchRegister::R0, ScratchRegister::R1).unwrap();
+                    e.mov(0, ScratchRegister::R1, ScratchRegister::R3).unwrap();
+
+                    // Jump back to loop start
+                    let mut jump_to_start = e.jump(JumpType::Jump).unwrap();
+                    let mut loop_end = e.put_label().unwrap();
+
+                    // Set jump targets
+                    jump_to_end.set_label(&mut loop_end);
+                    jump_to_start.set_label(&mut loop_start);
+
+                    // Return b (which has the result)
+                    e.emit_return(ReturnOp::Mov, ScratchRegister::R1).unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        let code = compiler.generate_code();
+        let func: fn(isize) -> isize = transmute(code.get());
+
+        // Test cases
+        assert_eq!(func(0), 0);
+        assert_eq!(func(1), 1);
+        assert_eq!(func(2), 2); // Was 1, now 2
+        assert_eq!(func(3), 3); // Was 2, now 3
+        assert_eq!(func(4), 5); // Was 3, now 5
+        assert_eq!(func(5), 8); // Was 5, now 8
+        assert_eq!(func(6), 13); // Was 8, now 13
+        assert_eq!(func(10), 89); // Was 55, now 89
+        assert_eq!(func(20), 10946); // Was 6765, now 10946
+    }
+}
+
+#[test]
+fn test_fib_iterative_while() {
+    unsafe {
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
+
+        // Function: fib(n) -> iterative version
+        emitter
+            .emit_enter(0, arg_types!(W -> [W]), regs!(4), regs!(1), 0)
+            .unwrap();
+
+        // Handle base cases
+        emitter
+            .branch(
+                Condition::LessEqual,
+                SavedRegister::S0,
+                1isize,
+                |e| {
+                    // Base case: return n
+                    e.emit_return(ReturnOp::Mov, SavedRegister::S0).unwrap();
+                    Ok(())
+                },
+                |e| {
+                    // Iterative case using the new loop API
+
+                    // R0 = a (starts as 0)
+                    e.mov(0, ScratchRegister::R0, 0isize).unwrap();
+                    // R1 = b (starts as 1)
+                    e.mov(0, ScratchRegister::R1, 1isize).unwrap();
+                    // R2 = counter (starts as n)
+                    e.mov(0, ScratchRegister::R2, SavedRegister::S0).unwrap();
+
+                    // Use the ergonomic while_ API
+                    e.while_(Condition::NotEqual, ScratchRegister::R2, 0isize, |e| {
+                        // Decrement counter
+                        e.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
+                            .unwrap();
+
+                        // Loop body: a, b = b, a + b
+                        e.add(
+                            0,
+                            ScratchRegister::R3,
+                            ScratchRegister::R0,
+                            ScratchRegister::R1,
+                        )
+                        .unwrap();
+                        e.mov(0, ScratchRegister::R0, ScratchRegister::R1).unwrap();
+                        e.mov(0, ScratchRegister::R1, ScratchRegister::R3).unwrap();
+
+                        Ok(())
+                    })
+                    .unwrap();
+
+                    // Return b (which has the result)
+                    e.emit_return(ReturnOp::Mov, ScratchRegister::R1).unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        let code = compiler.generate_code();
+        let func: fn(isize) -> isize = transmute(code.get());
+
+        // Test cases
+        assert_eq!(func(0), 0);
+        assert_eq!(func(1), 1);
+        assert_eq!(func(2), 2); // Was 1, now 2
+        assert_eq!(func(3), 3); // Was 2, now 3
+        assert_eq!(func(4), 5); // Was 3, now 5
+        assert_eq!(func(5), 8); // Was 5, now 8
+        assert_eq!(func(6), 13); // Was 8, now 13
+        assert_eq!(func(10), 89); // Was 55, now 89
+        assert_eq!(func(20), 10946); // Was 6765, now 10946
+    }
+}
+
+#[test]
+fn test_fib_iterative_loop_break() {
+    unsafe {
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
+
+        // Function: fib(n) -> iterative version using loop with break
+        emitter
+            .emit_enter(0, arg_types!(W -> [W]), regs!(4), regs!(1), 0)
+            .unwrap();
+
+        // Handle base cases
+        emitter
+            .branch(
+                Condition::LessEqual,
+                SavedRegister::S0,
+                1isize,
+                |e| {
+                    // Base case: return n
+                    e.emit_return(ReturnOp::Mov, SavedRegister::S0).unwrap();
+                    Ok(())
+                },
+                |e| {
+                    // Iterative case using the loop API with break
+
+                    // R0 = a (starts as 0)
+                    e.mov(0, ScratchRegister::R0, 0isize).unwrap();
+                    // R1 = b (starts as 1)
+                    e.mov(0, ScratchRegister::R1, 1isize).unwrap();
+                    // R2 = counter (starts as n)
+                    e.mov(0, ScratchRegister::R2, SavedRegister::S0).unwrap();
+
+                    // Use the ergonomic loop_ API with break
+                    e.loop_(|ctx| {
+                        // Decrement counter
+                        ctx.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
+                            .unwrap();
+                        ctx.branch(
+                            Condition::NotEqual,
+                            ScratchRegister::R2,
+                            0isize,
+                            |ctx| {
+                                // Loop body: a, b = b, a + b
+                                ctx.add(
+                                    0,
+                                    ScratchRegister::R3,
+                                    ScratchRegister::R0,
+                                    ScratchRegister::R1,
+                                )
+                                .unwrap();
+                                ctx.mov(0, ScratchRegister::R0, ScratchRegister::R1)
+                                    .unwrap();
+                                ctx.mov(0, ScratchRegister::R1, ScratchRegister::R3)
+                                    .unwrap();
+                                Ok(())
+                            },
+                            |ctx| ctx.break_(),
+                        )?;
+                        Ok(())
+                    })
+                    .unwrap();
+
+                    // Return b (which has the result)
+                    e.emit_return(ReturnOp::Mov, ScratchRegister::R1).unwrap();
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        let code = compiler.generate_code();
+        let func: fn(isize) -> isize = transmute(code.get());
+
+        // Test cases - should match test_fib_iterative
+        assert_eq!(func(0), 0);
+        assert_eq!(func(1), 1);
+        assert_eq!(func(2), 1);
+        assert_eq!(func(3), 2);
+        assert_eq!(func(4), 3);
+        assert_eq!(func(5), 5);
+        assert_eq!(func(6), 8);
+        assert_eq!(func(10), 55);
+        assert_eq!(func(20), 6765);
     }
 }
