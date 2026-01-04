@@ -1,19 +1,19 @@
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use gag::BufferRedirect;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use handlebars::Handlebars;
 use miette::IntoDiagnostic;
 #[cfg(feature = "bindgen")]
 use miette::WrapErr;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use miette::miette;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use natural_sort_rs::NaturalSortable;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::str::FromStr;
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 use std::{borrow::Cow, collections::HashMap};
 use std::{env, path::PathBuf};
 use strum::IntoStaticStr;
@@ -110,9 +110,7 @@ fn docs() -> bool {
 }
 
 #[cfg(feature = "bindgen")]
-fn do_bindgen(header: &str, file: &str) -> miette::Result<PathBuf> {
-    let out_path: PathBuf = PathBuf::from("./src");
-
+fn do_bindgen(out_path: PathBuf, header: &str, file: &str) -> miette::Result<PathBuf> {
     let (debug, verbose) = match (debug(), cfg!(feature = "force-verbose"), docs()) {
         (false, false, _) | (_, _, true) => ("0", "0"),
         (false, true, _) => ("0", "1"),
@@ -184,7 +182,7 @@ fn build_static_library() -> miette::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 fn generate_mid_level_binding(out_path: PathBuf) -> miette::Result<()> {
     use cmd_lib::run_cmd;
 
@@ -239,7 +237,7 @@ impl Compiler {
     Ok(())
 }
 
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 fn extract_fn_name(method_code: &str) -> Option<&str> {
     // Extract function name from something like:
     // pub fn emit_op1(...) {...}
@@ -255,21 +253,33 @@ fn extract_fn_name(method_code: &str) -> Option<&str> {
 fn main() -> miette::Result<()> {
     #[cfg(feature = "bindgen")]
     {
-        let out_path = do_bindgen("sljit/sljit_src/sljitLir.h", "wrapper.rs")?;
-        generate_mid_level_binding(out_path)?;
+        let out_path = do_bindgen(
+            if cfg!(feature = "bindgen-default-wrapper") {
+                PathBuf::from("./src")
+            } else {
+                PathBuf::from(env::var("OUT_DIR").into_diagnostic()?)
+            },
+            "sljit/sljit_src/sljitLir.h",
+            "wrapper.rs",
+        )?;
+        #[cfg(feature = "midgen")]
+        {
+            generate_mid_level_binding(out_path)?;
+        }
+        _ = out_path;
     }
     build_static_library()?;
     Ok(())
 }
 
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Position {
     line: usize,
     column: usize,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Range {
@@ -278,21 +288,21 @@ struct Range {
     start: Position,
     end: Position,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LabelJSON<'a> {
     text: &'a str,
     range: Range,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MatchNode<'a> {
     text: Cow<'a, str>,
     range: Range,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MatchJSON<'a> {
@@ -308,7 +318,7 @@ struct MatchJSON<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     meta_variables: Option<MetaVariables<'a>>,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MetaVariables<'a> {
@@ -316,7 +326,7 @@ struct MetaVariables<'a> {
     multi: HashMap<String, Vec<MatchNode<'a>>>,
     transformed: HashMap<String, String>,
 }
-#[cfg(feature = "bindgen")]
+#[cfg(feature = "midgen")]
 #[derive(Serialize)]
 struct Context {
     name: String,

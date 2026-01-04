@@ -9,6 +9,10 @@ use derive_more::{Display, Error, From, TryFrom};
 
 pub use pastey::paste as paste_priv;
 
+#[cfg(feature = "bindgen")]
+include!(concat!(env!("OUT_DIR"), "/wrapper.rs"));
+
+#[cfg(not(feature = "bindgen"))]
 include!("./wrapper.rs");
 
 #[derive(TryFrom, From, Error, Display, Clone, Copy, Debug, PartialEq)]
