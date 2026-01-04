@@ -8,6 +8,8 @@ use miette::WrapErr;
 #[cfg(feature = "bindgen")]
 use miette::miette;
 #[cfg(feature = "bindgen")]
+use natural_sort_rs::NaturalSortable;
+#[cfg(feature = "bindgen")]
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::str::FromStr;
@@ -204,11 +206,16 @@ fn generate_mid_level_binding(out_path: PathBuf) -> miette::Result<()> {
     let data: Vec<MatchJSON> = serde_json::from_reader(buf).into_diagnostic()?;
     let mut replacements: Vec<Cow<str>> = data.into_iter().flat_map(|x| x.replacement).collect();
 
-    // 2. SORT replacements by function name (NEW)
     replacements.sort_by(|a, b| {
         let a_name = extract_fn_name(a);
         let b_name = extract_fn_name(b);
-        a_name.cmp(&b_name)
+        if let Some(a_name) = a_name
+            && let Some(b_name) = b_name
+        {
+            return a_name.natural_cmp(b_name);
+        } else {
+            a_name.cmp(&b_name)
+        }
     });
 
     let mut hbs = Handlebars::new();
@@ -232,6 +239,7 @@ impl Compiler {
     Ok(())
 }
 
+#[cfg(feature = "bindgen")]
 fn extract_fn_name(method_code: &str) -> Option<&str> {
     // Extract function name from something like:
     // pub fn emit_op1(...) {...}

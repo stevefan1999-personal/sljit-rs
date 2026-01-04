@@ -20,6 +20,7 @@ cmd_lib = { version = "2.0.0", optional = true }
 gag = { version = "1.0.0", optional = true }
 handlebars = { version = "6.4.0", optional = true }
 miette = "7.6.0"
+natural-sort-rs = "0.2.1"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0.148", optional = true }
 static_assertions = "1.1.0"
