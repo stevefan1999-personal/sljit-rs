@@ -1487,7 +1487,7 @@ fn test_fib_iterative_while() {
                     e.mov(0, ScratchRegister::R2, SavedRegister::S0).unwrap();
 
                     // Use the ergonomic while_ API
-                    e.while_(Condition::NotEqual, ScratchRegister::R2, 0isize, |e| {
+                    e.while_(Condition::NotEqual, ScratchRegister::R2, 0isize, |e, _| {
                         // Decrement counter
                         e.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
                             .unwrap();
@@ -1563,30 +1563,28 @@ fn test_fib_iterative_loop_break() {
                     e.mov(0, ScratchRegister::R2, SavedRegister::S0).unwrap();
 
                     // Use the ergonomic loop_ API with break
-                    e.loop_(|ctx| {
+                    e.loop_(|e, ctx| {
                         // Decrement counter
-                        ctx.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
+                        e.sub(0, ScratchRegister::R2, ScratchRegister::R2, 1)
                             .unwrap();
-                        ctx.branch(
+                        e.branch(
                             Condition::NotEqual,
                             ScratchRegister::R2,
                             0isize,
-                            |ctx| {
+                            |e| {
                                 // Loop body: a, b = b, a + b
-                                ctx.add(
+                                e.add(
                                     0,
                                     ScratchRegister::R3,
                                     ScratchRegister::R0,
                                     ScratchRegister::R1,
                                 )
                                 .unwrap();
-                                ctx.mov(0, ScratchRegister::R0, ScratchRegister::R1)
-                                    .unwrap();
-                                ctx.mov(0, ScratchRegister::R1, ScratchRegister::R3)
-                                    .unwrap();
+                                e.mov(0, ScratchRegister::R0, ScratchRegister::R1).unwrap();
+                                e.mov(0, ScratchRegister::R1, ScratchRegister::R3).unwrap();
                                 Ok(())
                             },
-                            |ctx| ctx.break_(),
+                            |_| ctx.break_(),
                         )?;
                         Ok(())
                     })

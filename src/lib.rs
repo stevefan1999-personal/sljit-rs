@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use sljit_sys::{self as sys, Compiler, ErrorCode, Jump, Label, sljit_sw};
 
 #[repr(i32)]
@@ -668,43 +666,6 @@ impl<'a> LoopContext<'a> {
         let mut jump = self.emitter.jump(JumpType::Jump)?;
         jump.set_label(&mut self.loop_start);
         Ok(())
-    }   
-
-    pub fn branch<T, E>(
-        &mut self,
-        type_: Condition,
-        src1: impl Into<Operand>,
-        src2: impl Into<Operand>,
-        then_branch: T,
-        else_branch: E,
-    ) -> Result<&mut Self, ErrorCode>
-    where
-        T: FnOnce(&mut LoopContext<'a>) -> Result<(), ErrorCode>,
-        E: FnOnce(&mut LoopContext<'a>) -> Result<(), ErrorCode>,
-    {
-        let mut jump_to_else = self.cmp(type_.invert(), src1, src2)?;
-        then_branch(self)?;
-        let mut jump_to_end = self.jump(JumpType::Jump)?;
-        let mut else_label = self.put_label()?;
-        jump_to_else.set_label(&mut else_label);
-        else_branch(self)?;
-        let mut end_label = self.put_label()?;
-        jump_to_end.set_label(&mut end_label);
-        Ok(self)
-    }
-}
-
-impl<'a> Deref for LoopContext<'a> {
-    type Target = Emitter<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.emitter
-    }
-}
-
-impl<'a> DerefMut for LoopContext<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.emitter
     }
 }
 
@@ -1255,7 +1216,7 @@ impl<'a> Emitter<'a> {
         body: F,
     ) -> Result<&mut Self, ErrorCode>
     where
-        F: FnOnce(&mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
     {
         let mut loop_start = self.put_label()?;
 
@@ -1274,14 +1235,14 @@ impl<'a> Emitter<'a> {
                 loop_start,
                 break_jumps: Vec::new(),
             };
-            body(&mut ctx)?;
+            body(self, &mut ctx)?;
 
             // Jump back to loop start (continue)
-            let mut jump_to_start = ctx.jump(JumpType::Jump)?;
+            let mut jump_to_start = self.jump(JumpType::Jump)?;
             jump_to_start.set_label(&mut loop_start);
 
             // Loop end label - wire all break jumps to here
-            let mut loop_end = ctx.put_label()?;
+            let mut loop_end = self.put_label()?;
             jump_to_end.set_label(&mut loop_end);
 
             // Wire up any break jumps
@@ -1295,7 +1256,7 @@ impl<'a> Emitter<'a> {
 
     pub fn loop_<F>(&mut self, body: F) -> Result<&mut Self, ErrorCode>
     where
-        F: FnOnce(&mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
     {
         let mut loop_start = self.put_label()?;
 
@@ -1311,14 +1272,14 @@ impl<'a> Emitter<'a> {
                 loop_start,
                 break_jumps: Vec::new(),
             };
-            body(&mut ctx)?;
+            body(self, &mut ctx)?;
 
             // Jump back to loop start (continue)
-            let mut jump_to_start = ctx.jump(JumpType::Jump)?;
+            let mut jump_to_start = self.jump(JumpType::Jump)?;
             jump_to_start.set_label(&mut loop_start);
 
             // Loop end label - wire all break jumps to here
-            let mut loop_end = ctx.put_label()?;
+            let mut loop_end = self.put_label()?;
             for mut break_jump in ctx.break_jumps {
                 break_jump.set_label(&mut loop_end);
             }
