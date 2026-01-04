@@ -245,6 +245,8 @@ pub fn get_register_index(type_: sljit_s32, reg: sljit_s32) -> sljit_s32 {
     unsafe { sljit_get_register_index(type_, reg) }
 }
 
+pub const SLJIT_ENTER_VECTOR: i32 = SLJIT_ENTER_REG_ARG;
+
 #[inline(always)]
 pub fn get_platform_name() -> Result<&'static str, Utf8Error> {
     unsafe { CStr::from_ptr(sljit_get_platform_name()).to_str() }
@@ -298,15 +300,14 @@ macro_rules! arg_types {
     // Internal implementation: iterative encoding with compile-time bounds checking
     (@internal $ret:tt; $($args:tt),*) => {
         {
+            // Compile-time assertion for maximum argument count
+            const _: () = {
+                if const { $crate::arg_types!(@count; $($args),*) } > 4 {
+                    panic!("arg_types! macro supports maximum 4 arguments");
+                }
+            };
 
-        // Compile-time assertion for maximum argument count
-        const _: () = {
-            if const { $crate::arg_types!(@count; $($args),*) } > 4 {
-                panic!("arg_types! macro supports maximum 4 arguments");
-            }
-        };
-
-        $crate::arg_types!(@encode $ret; 0; 1; $($args),*)
+            $crate::arg_types!(@encode $ret; 0; 1; $($args),*)
         }
     };
 
@@ -503,7 +504,7 @@ mod integration_tests {
     use super::*;
 
     #[test]
-    fn test_add3() -> Result<(), Box<dyn Error>> {
+    fn test_add3() {
         unsafe {
             let mut compiler = Compiler::new();
             compiler
@@ -519,14 +520,13 @@ mod integration_tests {
                         /* in fact, R0 is RETURN REG itself */
                         .emit_return(SLJIT_MOV, SLJIT_R0, 0)?;
                     Ok::<_, ErrorCode>(())
-                })?;
+                })
+                .unwrap();
 
             let code = compiler.generate_code();
             let func: fn(c_int, c_int, c_int) -> c_int = transmute(code.get());
             assert_eq!(func(4, 5, 6), 4 + 5 + 6);
         }
-
-        Ok(())
     }
 
     #[test]
@@ -559,7 +559,7 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_array_access() -> Result<(), Box<dyn Error>> {
+    fn test_array_access() {
         unsafe {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
@@ -626,13 +626,11 @@ mod integration_tests {
                 func(arr.as_ptr(), arr.len().try_into().unwrap(), 0),
                 arr.len().try_into().unwrap()
             );
-
-            Ok(())
         }
     }
 
     #[test]
-    fn test_mem() -> Result<(), Box<dyn Error>> {
+    fn test_mem() {
         unsafe {
             let arr: &[isize] = &[3, -10, 4, 6, 8, 12, 2000, 0];
             let mut compiler = Compiler::new();
@@ -699,8 +697,6 @@ mod integration_tests {
                 func(arr.as_ptr(), arr.len().try_into().unwrap(), 0),
                 arr.len().try_into().unwrap()
             );
-
-            Ok(())
         }
     }
 }
