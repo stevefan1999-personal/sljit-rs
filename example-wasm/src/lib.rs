@@ -28,12 +28,14 @@ pub enum CompileError {
 }
 
 impl From<sys::ErrorCode> for CompileError {
+    #[inline(always)]
     fn from(e: sys::ErrorCode) -> Self {
         CompileError::Sljit(e)
     }
 }
 
 impl From<wasmparser::BinaryReaderError> for CompileError {
+    #[inline(always)]
     fn from(e: wasmparser::BinaryReaderError) -> Self {
         CompileError::Parse(e.to_string())
     }
@@ -128,6 +130,7 @@ enum StackValue {
 }
 
 impl StackValue {
+    #[inline(always)]
     fn to_operand(&self) -> Operand {
         match self {
             Self::Register(r) => (*r).into(),
@@ -241,7 +244,6 @@ macro_rules! stack_underflow {
 }
 
 impl Function {
-    #[inline]
     pub fn new() -> Self {
         Self {
             stack: vec![],
@@ -269,37 +271,37 @@ impl Function {
     }
 
     /// Set globals for the compiler
-    #[inline]
+    #[inline(always)]
     pub fn set_globals(&mut self, globals: Vec<GlobalInfo>) {
         self.globals = globals;
     }
 
     /// Set memory instance for the compiler
-    #[inline]
+    #[inline(always)]
     pub fn set_memory(&mut self, memory: MemoryInfo) {
         self.memory = Some(memory);
     }
 
     /// Set function table for direct calls
-    #[inline]
+    #[inline(always)]
     pub fn set_functions(&mut self, functions: Vec<FunctionEntry>) {
         self.functions = functions;
     }
 
     /// Set tables for indirect calls
-    #[inline]
+    #[inline(always)]
     pub fn set_tables(&mut self, tables: Vec<TableEntry>) {
         self.tables = tables;
     }
 
     /// Set function types for call_indirect
-    #[inline]
+    #[inline(always)]
     pub fn set_func_types(&mut self, func_types: Vec<FuncType>) {
         self.func_types = func_types;
     }
 
     /// Pop a value from stack with error handling
-    #[inline]
+    #[inline(always)]
     fn pop_value(&mut self) -> Result<StackValue, CompileError> {
         let val = self.stack.pop().ok_or_else(|| stack_underflow!())?;
         match &val {
@@ -311,7 +313,6 @@ impl Function {
     }
 
     /// Allocate a scratch register, spilling if necessary
-    #[inline]
     fn alloc_register(&mut self, emitter: &mut Emitter) -> Result<ScratchRegister, CompileError> {
         if let Some(reg) = self.free_registers.pop() {
             Ok(reg)
@@ -329,8 +330,8 @@ impl Function {
             Err(CompileError::Invalid("No registers available".into()))
         }
     }
-    #[inline]
 
+    #[inline(always)]
     fn free_register(&mut self, reg: ScratchRegister) {
         if !self.free_registers.contains(&reg) {
             self.free_registers.insert(reg);
@@ -338,7 +339,6 @@ impl Function {
     }
 
     /// Allocate a float register, spilling if necessary
-    #[inline]
     fn alloc_float_register(
         &mut self,
         emitter: &mut Emitter,
@@ -360,21 +360,20 @@ impl Function {
             Err(CompileError::Invalid("No float registers available".into()))
         }
     }
-    #[inline]
 
+    #[inline(always)]
     fn free_float_register(&mut self, reg: FloatRegister) {
         if !self.free_float_registers.contains(&reg) {
             self.free_float_registers.insert(reg);
         }
     }
-    #[inline]
 
+    #[inline(always)]
     fn push(&mut self, value: StackValue) {
         self.stack.push(value);
     }
 
     /// Ensure a stack value is in a register
-    #[inline]
     fn ensure_in_register(
         &mut self,
         emitter: &mut Emitter,
@@ -411,7 +410,6 @@ impl Function {
     }
 
     /// Ensure a stack value is in a float register
-    #[inline]
     fn ensure_in_float_register(
         &mut self,
         emitter: &mut Emitter,
@@ -469,7 +467,6 @@ impl Function {
     }
 
     /// Emit mov from StackValue to a saved register
-    #[inline]
     fn emit_mov_to_saved(
         &self,
         emitter: &mut Emitter,
@@ -499,7 +496,6 @@ impl Function {
     }
 
     /// Emit mov from StackValue to stack offset
-    #[inline]
     fn emit_mov_to_stack_offset(
         &mut self,
         emitter: &mut Emitter,
@@ -526,7 +522,6 @@ impl Function {
     }
 
     /// Emit mov to local variable (unified helper for LocalSet/LocalTee)
-    #[inline]
     fn emit_set_local(
         &mut self,
         emitter: &mut Emitter,
@@ -578,7 +573,6 @@ impl Function {
     }
 
     /// Save all register values to stack (for control flow)
-    #[inline]
     fn save_all_to_stack(&mut self, emitter: &mut Emitter) -> Result<(), CompileError> {
         for (i, reg) in self
             .stack
@@ -603,7 +597,6 @@ impl Function {
     }
 
     /// Create a new block with common initialization
-    #[inline]
     fn new_block(&mut self, label: Option<sys::Label>, has_result: bool) -> Block {
         let result_offset = if has_result {
             let offset = self.frame_offset;
@@ -629,7 +622,6 @@ impl Function {
 
     /// Make argument types bitmask for sljit
     /// Supports up to 7 arguments (with 32-bit arg_types bitmask)
-    #[inline]
     fn make_arg_types(params: &[ValType], results: &[ValType]) -> i32 {
         let ret_type = if results.is_empty() {
             sys::SLJIT_ARG_TYPE_RET_VOID
@@ -660,7 +652,6 @@ impl Function {
     }
 
     /// Compile a WebAssembly function
-    #[inline]
     pub fn compile_function<'a, B>(
         &mut self,
         compiler: &mut Compiler,
@@ -734,7 +725,6 @@ impl Function {
     }
 
     /// Compile a single WebAssembly operator
-    #[inline]
     fn compile_operator(
         &mut self,
         emitter: &mut Emitter,
@@ -1329,7 +1319,6 @@ impl Function {
     }
 
     /// Helper to emit conditional jump (used by If and BrIf)
-    #[inline]
     fn emit_cond_jump(
         &mut self,
         emitter: &mut Emitter,
@@ -1347,7 +1336,6 @@ impl Function {
         }
     }
 
-    #[inline]
     fn compile_end(&mut self, emitter: &mut Emitter) -> Result<(), CompileError> {
         if self.blocks.len() == 1 {
             let block = self.blocks.pop().unwrap();
@@ -1393,7 +1381,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_br(
         &mut self,
         emitter: &mut Emitter,
@@ -1422,7 +1409,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_br_if(
         &mut self,
         emitter: &mut Emitter,
@@ -1443,7 +1429,6 @@ impl Function {
     }
 
     /// Compile a binary arithmetic operation using functional dispatch
-    #[inline]
     fn compile_binary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1474,7 +1459,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_compare_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1503,7 +1487,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_div_op(&mut self, emitter: &mut Emitter, op: DivOp) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
         let (reg_a, reg_b) = (
@@ -1544,7 +1527,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_unary_op(&mut self, emitter: &mut Emitter, op: UnaryOp) -> Result<(), CompileError> {
         let val = self.pop_value()?;
         let reg = self.ensure_in_register(emitter, val)?;
@@ -1581,7 +1563,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_load_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1626,7 +1607,6 @@ impl Function {
         Ok(())
     }
 
-    #[inline]
     fn compile_store_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1671,7 +1651,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_binary_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1703,7 +1682,6 @@ impl Function {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
-    #[inline]
     fn compile_binary_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1715,7 +1693,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_compare_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1756,7 +1733,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_div_op64(&mut self, emitter: &mut Emitter, op: DivOp) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
         let (reg_a, reg_b) = (
@@ -1805,7 +1781,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_unary_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1849,7 +1824,6 @@ impl Function {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
-    #[inline]
     fn compile_unary_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1861,7 +1835,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_load_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1902,7 +1875,6 @@ impl Function {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
-    #[inline]
     fn compile_load_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1915,7 +1887,6 @@ impl Function {
     }
 
     #[cfg(target_pointer_width = "64")]
-    #[inline]
     fn compile_store_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1963,7 +1934,6 @@ impl Function {
     }
 
     /// Compile a floating point binary operation
-    #[inline]
     fn compile_float_binary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2049,7 +2019,6 @@ impl Function {
     }
 
     /// Compile a floating point unary operation
-    #[inline]
     fn compile_float_unary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2146,7 +2115,6 @@ impl Function {
     }
 
     /// Helper to move float register conditionally based on is_f32
-    #[inline]
     fn mov_float(
         emitter: &mut Emitter,
         is_f32: bool,
@@ -2162,7 +2130,6 @@ impl Function {
     }
 
     /// Emit a call to a libm function for float binary operations
-    #[inline]
     fn emit_float_binary_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2195,7 +2162,6 @@ impl Function {
     }
 
     /// Emit a call to a libm function for float unary operations
-    #[inline]
     fn emit_float_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2224,7 +2190,6 @@ impl Function {
     }
 
     /// Compile a floating point comparison operation
-    #[inline]
     fn compile_float_compare_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2254,7 +2219,6 @@ impl Function {
     }
 
     /// Convert integer to float
-    #[inline]
     fn compile_convert_int_to_float(
         &mut self,
         emitter: &mut Emitter,
@@ -2309,7 +2273,6 @@ impl Function {
     }
 
     /// Convert float to integer (truncate)
-    #[inline]
     fn compile_convert_float_to_int(
         &mut self,
         emitter: &mut Emitter,
@@ -2351,7 +2314,6 @@ impl Function {
     }
 
     /// Compile f32.demote_f64 or f64.promote_f32
-    #[inline]
     fn compile_float_demote_promote(
         &mut self,
         emitter: &mut Emitter,
@@ -2369,7 +2331,6 @@ impl Function {
     }
 
     /// Compile global.get - load a global variable value
-    #[inline]
     fn compile_global_get(
         &mut self,
         emitter: &mut Emitter,
@@ -2428,7 +2389,6 @@ impl Function {
     }
 
     /// Compile global.set - store a value to a global variable
-    #[inline]
     fn compile_global_set(
         &mut self,
         emitter: &mut Emitter,
@@ -2494,7 +2454,6 @@ impl Function {
     }
 
     /// Compile memory.size - return current memory size in pages
-    #[inline]
     fn compile_memory_size(
         &mut self,
         emitter: &mut Emitter,
@@ -2514,7 +2473,6 @@ impl Function {
     }
 
     /// Compile memory.grow - grow memory by delta pages, return previous size or -1 on failure
-    #[inline]
     fn compile_memory_grow(
         &mut self,
         emitter: &mut Emitter,
@@ -2574,7 +2532,6 @@ impl Function {
 
     /// Compile call - direct function call
     /// Supports functions with more than 3 parameters by passing extra args on stack
-    #[inline]
     fn compile_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2680,7 +2637,6 @@ impl Function {
 
     /// Compile call_indirect - indirect function call through table
     /// Supports functions with more than 3 parameters by passing extra args on stack
-    #[inline]
     fn compile_call_indirect(
         &mut self,
         emitter: &mut Emitter,
@@ -2820,7 +2776,6 @@ impl Function {
     }
 
     /// Compile br_table - branch table (switch-like construct)
-    #[inline]
     fn compile_br_table(
         &mut self,
         emitter: &mut Emitter,
@@ -2867,7 +2822,7 @@ impl Function {
 }
 
 impl Default for Function {
-    #[inline]
+    #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
@@ -2879,29 +2834,28 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
-    #[inline]
+    #[inline(always)]
     pub fn as_fn_0(&self) -> fn() -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_fn_1(&self) -> fn(i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_fn_2(&self) -> fn(i32, i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_fn_3(&self) -> fn(i32, i32, i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
 }
 
 /// Compile a simple WebAssembly function from operators
-#[inline]
 pub fn compile_simple<'a>(
     params: &[ValType],
     results: &[ValType],
