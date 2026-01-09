@@ -2,8 +2,10 @@ pub use sljit_sys as sys;
 
 use sljit_sys::{Compiler, ErrorCode, Jump, Label, sljit_sw};
 
+use crate::sys::SLJIT_MEM;
+
 #[repr(i32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A scratch register.
 pub enum ScratchRegister {
     /// Scratch register 0.
@@ -55,7 +57,7 @@ pub enum SavedRegister {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// A float register.
 pub enum FloatRegister {
     /// Float register 0.
@@ -81,7 +83,7 @@ pub enum FloatRegister {
 }
 
 #[repr(i32)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A saved float register.
 pub enum SavedFloatRegister {
     /// Saved float register 0.
@@ -347,7 +349,7 @@ impl From<Operand> for (i32, sljit_sw) {
 #[inline(always)]
 pub fn mem(base: impl Into<Operand>) -> Operand {
     let mut op = base.into();
-    op.0 = sys::mem!(op.0);
+    op.0 |= SLJIT_MEM;
     op
 }
 
@@ -355,7 +357,7 @@ pub fn mem(base: impl Into<Operand>) -> Operand {
 #[inline(always)]
 pub fn mem_offset(base: impl Into<Operand>, offset: i32) -> Operand {
     let mut op = base.into();
-    op.0 = sys::mem!(op.0);
+    op.0 |= SLJIT_MEM;
     op.1 = offset as sljit_sw;
     op
 }
@@ -388,6 +390,12 @@ pub fn mem_abs(addr: isize) -> Operand {
 #[inline(always)]
 pub fn mem_sp() -> Operand {
     Operand(sys::mem!(sys::SLJIT_SP), 0)
+}
+
+/// A memory operand relative to the stack pointer with an offset.
+#[inline(always)]
+pub fn mem_sp_offset(offset: i32) -> Operand {
+    Operand(sys::mem!(sys::SLJIT_SP), offset as sljit_sw)
 }
 
 /// A macro to build the register argument for `emit_enter`.

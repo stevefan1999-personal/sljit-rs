@@ -349,7 +349,7 @@ macro_rules! mem {
 }
 
 #[repr(transparent)]
-#[derive(From, Clone, Copy)]
+#[derive(From, Clone, Copy, Debug)]
 pub struct Constant(*mut sljit_const);
 
 impl Constant {
@@ -360,7 +360,7 @@ impl Constant {
 }
 
 #[repr(transparent)]
-#[derive(From, Clone, Copy)]
+#[derive(From, Clone, Copy, Debug)]
 pub struct Label(*mut sljit_label);
 
 impl Label {
@@ -389,7 +389,7 @@ impl Label {
 }
 
 #[repr(transparent)]
-#[derive(From, Clone, Copy)]
+#[derive(From, Clone, Copy, Debug)]
 pub struct Jump(*mut sljit_jump);
 
 impl Jump {
