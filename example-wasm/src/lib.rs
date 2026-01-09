@@ -3748,11 +3748,11 @@ pub fn compile_simple<'a>(
     params: &[ValType],
     results: &[ValType],
     locals: &[ValType],
-    body: impl Iterator<Item = Operator<'a>>,
+    body: &[Operator],
 ) -> Result<CompiledFunction, CompileError> {
     let mut compiler = Compiler::new();
     let mut wasm_compiler = Function::new();
-    wasm_compiler.compile_function(&mut compiler, params, results, locals, body)?;
+    wasm_compiler.compile_function(&mut compiler, params, results, locals, body.iter().cloned())?;
     Ok(CompiledFunction {
         code: compiler.generate_code(),
     })
