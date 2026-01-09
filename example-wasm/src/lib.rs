@@ -318,8 +318,8 @@ impl Function {
     fn pop_value(&mut self) -> Result<StackValue, CompileError> {
         let val = self.stack.pop().ok_or_else(|| stack_underflow!())?;
         match &val {
-            StackValue::Register(reg) => self.free_register(*reg),
-            StackValue::FloatRegister(reg) => self.free_float_register(*reg),
+            StackValue::Register(reg) => self.free_registers.set(*reg as usize, true),
+            StackValue::FloatRegister(reg) => self.free_float_registers.set(*reg as usize, true),
             _ => {}
         };
         Ok(val)
@@ -347,11 +347,6 @@ impl Function {
         }
     }
 
-    #[inline(always)]
-    fn free_register(&mut self, reg: ScratchRegister) {
-        self.free_registers.set(reg as usize, true);
-    }
-
     /// Allocate a float register, spilling if necessary
     fn alloc_float_register(
         &mut self,
@@ -376,16 +371,6 @@ impl Function {
             }
             Err(CompileError::Invalid("No float registers available".into()))
         }
-    }
-
-    #[inline(always)]
-    fn free_float_register(&mut self, reg: FloatRegister) {
-        self.free_float_registers.set(reg as usize, true);
-    }
-
-    #[inline(always)]
-    fn push(&mut self, value: StackValue) {
-        self.stack.push(value);
     }
 
     /// Ensure a stack value is in a register
@@ -521,7 +506,7 @@ impl Function {
         match val {
             StackValue::Register(reg) => {
                 emitter.mov(0, mem_sp_offset(offset), reg)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
             }
             StackValue::Const(c) => {
                 emitter.mov(0, mem_sp_offset(offset), c)?;
@@ -606,7 +591,7 @@ impl Function {
             let offset = self.frame_offset;
             self.frame_offset += 8;
             emitter.mov(0, mem_sp_offset(offset), reg)?;
-            self.free_register(reg);
+            self.free_registers.set(reg as usize, true);
             self.stack[i] = StackValue::Stack(offset);
         }
         Ok(())
@@ -749,13 +734,13 @@ impl Function {
     ) -> Result<(), CompileError> {
         match op {
             Operator::I32Const { value } => {
-                self.push(StackValue::Const(*value));
+                self.stack.push(StackValue::Const(*value));
                 Ok(())
             }
 
             Operator::LocalGet { local_index } => {
                 let local = &self.locals[*local_index as usize];
-                self.push(match local {
+                self.stack.push(match local {
                     LocalVar::Saved(sreg) => StackValue::Saved(*sreg),
                     LocalVar::Stack(offset) => StackValue::Stack(*offset),
                 });
@@ -767,7 +752,7 @@ impl Function {
                 let local = self.locals[*local_index as usize].clone();
                 self.emit_set_local(emitter, &local, &value)?;
                 if let StackValue::Register(reg) = value {
-                    self.free_register(reg);
+                    self.free_registers.set(reg as usize, true);
                 }
                 Ok(())
             }
@@ -823,7 +808,7 @@ impl Function {
                         Ok(())
                     },
                 )?;
-                self.push(StackValue::Register(reg));
+                self.stack.push(StackValue::Register(reg));
                 Ok(())
             }
             Operator::I32Eq => self.compile_compare_op(emitter, Condition::Equal),
@@ -902,7 +887,7 @@ impl Function {
             Operator::Return => {
                 if let Some(value) = self.stack.pop() {
                     if let StackValue::Register(reg) = &value {
-                        self.free_register(*reg);
+                        self.free_registers.set(*reg as usize, true);
                     }
                     emitter.emit_return(ReturnOp::Mov, value.to_operand())?;
                 } else {
@@ -933,9 +918,9 @@ impl Function {
                         Ok(())
                     },
                 )?;
-                self.free_register(cond_reg);
-                self.free_register(reg2);
-                self.push(StackValue::Register(reg1));
+                self.free_registers.set(cond_reg as usize, true);
+                self.free_registers.set(reg2 as usize, true);
+                self.stack.push(StackValue::Register(reg1));
                 Ok(())
             }
 
@@ -977,7 +962,7 @@ impl Function {
                 {
                     let reg = self.alloc_register(emitter)?;
                     emitter.mov(0, reg, *value as isize)?;
-                    self.push(StackValue::Register(reg));
+                    self.stack.push(StackValue::Register(reg));
                     Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
@@ -989,7 +974,7 @@ impl Function {
                     emitter.mov32(0, mem_sp_offset(offset), (*value & 0xFFFFFFFF) as i32)?;
                     // Store upper 32 bits
                     emitter.mov32(0, mem_sp_offset(offset + 4), (*value >> 32) as i32)?;
-                    self.push(StackValue::Stack(offset));
+                    self.stack.push(StackValue::Stack(offset));
                     Ok(())
                 }
             }
@@ -1033,7 +1018,7 @@ impl Function {
                         Ok(())
                     },
                 )?;
-                self.push(StackValue::Register(reg));
+                self.stack.push(StackValue::Register(reg));
                 Ok(())
             }
             Operator::I64Eq => self.compile_compare_op64(emitter, Condition::Equal),
@@ -1088,7 +1073,7 @@ impl Function {
                 {
                     let reg = self.ensure_in_register(emitter, val)?;
                     emitter.mov32(0, reg, reg)?;
-                    self.push(StackValue::Register(reg));
+                    self.stack.push(StackValue::Register(reg));
                     Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
@@ -1099,14 +1084,14 @@ impl Function {
                         StackValue::Stack(offset) => {
                             let reg = self.alloc_register(emitter)?;
                             emitter.mov32(0, reg, mem_sp_offset(offset))?; // Load low 32 bits only
-                            self.push(StackValue::Register(reg));
+                            self.stack.push(StackValue::Register(reg));
                             Ok(())
                         }
                         _ => {
                             // If it's a register, it's already the low 32 bits
                             let reg = self.ensure_in_register(emitter, val)?;
                             emitter.mov32(0, reg, reg)?;
-                            self.push(StackValue::Register(reg));
+                            self.stack.push(StackValue::Register(reg));
                             Ok(())
                         }
                     }
@@ -1119,7 +1104,7 @@ impl Function {
                     let val = self.pop_value()?;
                     let reg = self.ensure_in_register(emitter, val)?;
                     emitter.mov_s32(0, reg, reg)?;
-                    self.push(StackValue::Register(reg));
+                    self.stack.push(StackValue::Register(reg));
                     Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
@@ -1139,8 +1124,8 @@ impl Function {
                     emitter.ashr32(0, reg, reg, 31i32)?;
                     emitter.mov32(0, mem_sp_offset(offset + 4), reg)?;
 
-                    self.free_register(reg);
-                    self.push(StackValue::Stack(offset));
+                    self.free_registers.set(reg as usize, true);
+                    self.stack.push(StackValue::Stack(offset));
                     Ok(())
                 }
             }
@@ -1151,7 +1136,7 @@ impl Function {
                     let val = self.pop_value()?;
                     let reg = self.ensure_in_register(emitter, val)?;
                     emitter.mov_u32(0, reg, reg)?;
-                    self.push(StackValue::Register(reg));
+                    self.stack.push(StackValue::Register(reg));
                     Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
@@ -1170,19 +1155,19 @@ impl Function {
                     // Zero extend to high part
                     emitter.mov32(0, mem_sp_offset(offset + 4), 0i32)?;
 
-                    self.free_register(reg);
-                    self.push(StackValue::Stack(offset));
+                    self.free_registers.set(reg as usize, true);
+                    self.stack.push(StackValue::Stack(offset));
                     Ok(())
                 }
             }
 
             // Floating point constants
             Operator::F32Const { value } => {
-                self.push(StackValue::ConstF32(value.bits()));
+                self.stack.push(StackValue::ConstF32(value.bits()));
                 Ok(())
             }
             Operator::F64Const { value } => {
-                self.push(StackValue::ConstF64(value.bits()));
+                self.stack.push(StackValue::ConstF64(value.bits()));
                 Ok(())
             }
 
@@ -1322,8 +1307,8 @@ impl Function {
                 self.frame_offset = temp_offset + 8;
                 emitter.mov_f32(0, mem_sp_offset(temp_offset), freg)?;
                 emitter.mov32(0, reg, mem_sp_offset(temp_offset))?;
-                self.free_float_register(freg);
-                self.push(StackValue::Register(reg));
+                self.free_float_registers.set(freg as usize, true);
+                self.stack.push(StackValue::Register(reg));
                 Ok(())
             }
             Operator::I64ReinterpretF64 => {
@@ -1333,18 +1318,18 @@ impl Function {
                 let temp_offset = (self.frame_offset + 7) & !7;
                 self.frame_offset = temp_offset + 8;
                 emitter.mov_f64(0, mem_sp_offset(temp_offset), freg)?;
-                self.free_float_register(freg);
+                self.free_float_registers.set(freg as usize, true);
 
                 #[cfg(target_pointer_width = "64")]
                 {
                     let reg = self.alloc_register(emitter)?;
                     emitter.mov(0, reg, mem_sp_offset(temp_offset))?;
-                    self.push(StackValue::Register(reg));
+                    self.stack.push(StackValue::Register(reg));
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
                     // On 32-bit, the i64 value stays on stack (already there from mov_f64)
-                    self.push(StackValue::Stack(temp_offset));
+                    self.stack.push(StackValue::Stack(temp_offset));
                 }
                 Ok(())
             }
@@ -1357,8 +1342,8 @@ impl Function {
                 self.frame_offset = temp_offset + 8;
                 emitter.mov32(0, mem_sp_offset(temp_offset), reg)?;
                 emitter.mov_f32(0, freg, mem_sp_offset(temp_offset))?;
-                self.free_register(reg);
-                self.push(StackValue::FloatRegister(freg));
+                self.free_registers.set(reg as usize, true);
+                self.stack.push(StackValue::FloatRegister(freg));
                 Ok(())
             }
             Operator::F64ReinterpretI64 => {
@@ -1372,7 +1357,7 @@ impl Function {
                 {
                     let reg = self.ensure_in_register(emitter, val)?;
                     emitter.mov(0, mem_sp_offset(temp_offset), reg)?;
-                    self.free_register(reg);
+                    self.free_registers.set(reg as usize, true);
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
@@ -1385,7 +1370,7 @@ impl Function {
                             emitter.mov32(0, mem_sp_offset(temp_offset), temp_reg)?;
                             emitter.mov32(0, temp_reg, mem_sp_offset(value_offset + 4))?;
                             emitter.mov32(0, mem_sp_offset(temp_offset + 4), temp_reg)?;
-                            self.free_register(temp_reg);
+                            self.free_registers.set(temp_reg as usize, true);
                         }
                         _ => {
                             return Err(CompileError::Invalid(
@@ -1396,7 +1381,7 @@ impl Function {
                 }
 
                 emitter.mov_f64(0, freg, mem_sp_offset(temp_offset))?;
-                self.push(StackValue::FloatRegister(freg));
+                self.stack.push(StackValue::FloatRegister(freg));
                 Ok(())
             }
 
@@ -1435,7 +1420,7 @@ impl Function {
         match cond {
             StackValue::Register(reg) => {
                 let j = emitter.cmp(condition, reg, 0i32)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
                 Ok(j)
             }
             StackValue::Saved(sreg) => Ok(emitter.cmp(condition, sreg, 0i32)?),
@@ -1456,7 +1441,7 @@ impl Function {
 
             if let Some(value) = self.stack.pop() {
                 if let StackValue::Register(reg) = &value {
-                    self.free_register(*reg);
+                    self.free_registers.set(*reg as usize, true);
                 }
                 emitter.emit_return(ReturnOp::Mov, value.to_operand())?;
             } else {
@@ -1499,7 +1484,7 @@ impl Function {
             && let Some(val) = self.stack.pop()
         {
             if let StackValue::Register(reg) = &val {
-                self.free_register(*reg);
+                self.free_registers.set(*reg as usize, true);
             }
             self.emit_mov_to_stack_offset(emitter, result_offset, val)?;
         }
@@ -1560,9 +1545,9 @@ impl Function {
         };
 
         if let StackValue::Register(reg_b) = b {
-            self.free_register(reg_b);
+            self.free_registers.set(reg_b as usize, true);
         }
-        self.push(StackValue::Register(reg_a));
+        self.stack.push(StackValue::Register(reg_a));
         Ok(())
     }
 
@@ -1588,9 +1573,9 @@ impl Function {
             },
         )?;
         if let StackValue::Register(reg_b) = b {
-            self.free_register(reg_b);
+            self.free_registers.set(reg_b as usize, true);
         }
-        self.push(StackValue::Register(reg_a));
+        self.stack.push(StackValue::Register(reg_a));
         Ok(())
     }
 
@@ -1611,7 +1596,7 @@ impl Function {
         [reg_a, reg_b]
             .iter()
             .filter(|&&r| r != ScratchRegister::R0 && r != ScratchRegister::R1)
-            .for_each(|&r| self.free_register(r));
+            .for_each(|&r| self.free_registers.set(r as usize, true));
 
         match op {
             DivOp::DivS | DivOp::RemS => {
@@ -1629,7 +1614,7 @@ impl Function {
 
         self.free_registers.set(other_reg as usize, true);
         self.free_registers.set(result_reg as usize, false);
-        self.push(StackValue::Register(result_reg));
+        self.stack.push(StackValue::Register(result_reg));
         Ok(())
     }
 
@@ -1662,10 +1647,10 @@ impl Function {
                 emitter.lshr32(0, temp, reg, 16i32)?;
                 emitter.add32(0, reg, reg, temp)?;
                 emitter.and32(0, reg, reg, 0x3fi32)?;
-                self.free_register(temp);
+                self.free_registers.set(temp as usize, true);
             }
         }
-        self.push(StackValue::Register(reg));
+        self.stack.push(StackValue::Register(reg));
         Ok(())
     }
 
@@ -1704,13 +1689,13 @@ impl Function {
                 } else {
                     emitter.mov_f64(0, freg, mem)?;
                 }
-                self.free_register(addr_reg);
-                self.push(StackValue::FloatRegister(freg));
+                self.free_registers.set(addr_reg as usize, true);
+                self.stack.push(StackValue::FloatRegister(freg));
                 return Ok(());
             }
             _ => unreachable!("I64 variants handled by compile_load_op64"),
         }
-        self.push(StackValue::Register(addr_reg));
+        self.stack.push(StackValue::Register(addr_reg));
         Ok(())
     }
 
@@ -1735,7 +1720,7 @@ impl Function {
                 } else {
                     emitter.mov_f64(0, mem, freg)?;
                 }
-                self.free_float_register(freg);
+                self.free_float_registers.set(freg as usize, true);
             }
             _ => {
                 let value_reg = self.ensure_in_register(emitter, value)?;
@@ -1751,10 +1736,10 @@ impl Function {
                     }
                     _ => unreachable!("I64 variants handled by compile_store_op64"),
                 }
-                self.free_register(value_reg);
+                self.free_registers.set(value_reg as usize, true);
             }
         }
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
         Ok(())
     }
 
@@ -1783,9 +1768,9 @@ impl Function {
         };
 
         if let StackValue::Register(reg_b) = b {
-            self.free_register(reg_b);
+            self.free_registers.set(reg_b as usize, true);
         }
-        self.push(StackValue::Register(reg_a));
+        self.stack.push(StackValue::Register(reg_a));
         Ok(())
     }
 
@@ -1815,7 +1800,7 @@ impl Function {
                         emitter.mov32(0, sign_reg, val)?;
                         emitter.ashr32(0, sign_reg, sign_reg, 31i32)?;
                         emitter.mov32(0, mem_sp_offset(off_a + 4), sign_reg)?;
-                        self.free_register(sign_reg);
+                        self.free_registers.set(sign_reg as usize, true);
                     }
                     _ => {
                         let reg_a = self.ensure_in_register(emitter, a)?;
@@ -1823,7 +1808,7 @@ impl Function {
                         // Sign extend for signed values
                         emitter.ashr32(0, reg_a, reg_a, 31i32)?;
                         emitter.mov32(0, mem_sp_offset(off_a + 4), reg_a)?;
-                        self.free_register(reg_a);
+                        self.free_registers.set(reg_a as usize, true);
                     }
                 }
                 off_a
@@ -1844,7 +1829,7 @@ impl Function {
                         emitter.mov32(0, sign_reg, val)?;
                         emitter.ashr32(0, sign_reg, sign_reg, 31i32)?;
                         emitter.mov32(0, mem_sp_offset(off_b + 4), sign_reg)?;
-                        self.free_register(sign_reg);
+                        self.free_registers.set(sign_reg as usize, true);
                     }
                     _ => {
                         let reg_b = self.ensure_in_register(emitter, b)?;
@@ -1852,7 +1837,7 @@ impl Function {
                         // Sign extend for signed values
                         emitter.ashr32(0, reg_b, reg_b, 31i32)?;
                         emitter.mov32(0, mem_sp_offset(off_b + 4), reg_b)?;
-                        self.free_register(reg_b);
+                        self.free_registers.set(reg_b as usize, true);
                     }
                 }
                 off_b
@@ -1881,22 +1866,22 @@ impl Function {
                 emitter.and32(0, reg_a_low, reg_a_low, reg_b_low)?;
                 emitter.and32(0, reg_a_high, reg_a_high, reg_b_high)?;
                 // Free b regs early
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
             BinaryOp::Or => {
                 emitter.or32(0, reg_a_low, reg_a_low, reg_b_low)?;
                 emitter.or32(0, reg_a_high, reg_a_high, reg_b_high)?;
                 // Free b regs early
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
             BinaryOp::Xor => {
                 emitter.xor32(0, reg_a_low, reg_a_low, reg_b_low)?;
                 emitter.xor32(0, reg_a_high, reg_a_high, reg_b_high)?;
                 // Free b regs early
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
 
             // Addition: add with carry
@@ -1906,8 +1891,8 @@ impl Function {
                 // Add high parts with carry
                 emitter.addc32(0, reg_a_high, reg_a_high, reg_b_high)?;
                 // Free b regs early
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
 
             // Subtraction: sub with borrow
@@ -1917,14 +1902,14 @@ impl Function {
                 // Sub high parts with borrow
                 emitter.subc32(0, reg_a_high, reg_a_high, reg_b_high)?;
                 // Free b regs early
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
 
             // Shift left: shifts across the 64-bit boundary
             BinaryOp::Shl => {
                 // Free b regs since we only need the shift amount
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_high as usize, true);
 
                 // Get shift amount (only low 6 bits matter for 64-bit shift)
                 let shift_amount = reg_b_low; // Reuse instead of allocating
@@ -1979,7 +1964,7 @@ impl Function {
             // Logical shift right
             BinaryOp::ShrU => {
                 // Free b_high since we only need shift amount
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_high as usize, true);
 
                 // Get shift amount (only low 6 bits matter for 64-bit shift)
                 let shift_amount = reg_b_low; // Reuse
@@ -2034,7 +2019,7 @@ impl Function {
             // Arithmetic shift right
             BinaryOp::ShrS => {
                 // Free b_high since we only need shift amount
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_high as usize, true);
 
                 // Get shift amount (only low 6 bits matter for 64-bit shift)
                 let shift_amount = reg_b_low; // Reuse
@@ -2089,7 +2074,7 @@ impl Function {
             // Rotation operations: rotl and rotr
             BinaryOp::Rotl => {
                 // Free b_high since we only need the rotation amount (bottom 6 bits of b_low)
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_high as usize, true);
 
                 // Get rotation amount (only low 6 bits matter for 64-bit rotation)
                 let rot_amount = reg_b_low;
@@ -2199,13 +2184,13 @@ impl Function {
                 jump_end.set_label(&mut label_end);
                 jump_end2.set_label(&mut label_end);
 
-                self.free_register(temp1);
-                self.free_register(temp2);
+                self.free_registers.set(temp1 as usize, true);
+                self.free_registers.set(temp2 as usize, true);
             }
 
             BinaryOp::Rotr => {
                 // Free b_high since we only need the rotation amount
-                self.free_register(reg_b_high);
+                self.free_registers.set(reg_b_high as usize, true);
 
                 // Get rotation amount (only low 6 bits matter for 64-bit rotation)
                 let rot_amount = reg_b_low;
@@ -2308,8 +2293,8 @@ impl Function {
                 jump_end.set_label(&mut label_end);
                 jump_end2.set_label(&mut label_end);
 
-                self.free_register(temp1);
-                self.free_register(temp2);
+                self.free_registers.set(temp1 as usize, true);
+                self.free_registers.set(temp2 as usize, true);
             }
 
             // 64-bit multiplication
@@ -2446,10 +2431,10 @@ impl Function {
                 // Load final low result
                 emitter.mov32(0, reg_a_low, mem_sp_offset(saved_a_low_offset))?;
 
-                self.free_register(temp1);
-                self.free_register(temp2);
-                self.free_register(reg_b_low);
-                self.free_register(reg_b_high);
+                self.free_registers.set(temp1 as usize, true);
+                self.free_registers.set(temp2 as usize, true);
+                self.free_registers.set(reg_b_low as usize, true);
+                self.free_registers.set(reg_b_high as usize, true);
             }
         }
 
@@ -2459,10 +2444,10 @@ impl Function {
         emitter.mov32(0, mem_sp_offset(result_offset), reg_a_low)?;
         emitter.mov32(0, mem_sp_offset(result_offset + 4), reg_a_high)?;
 
-        self.free_register(reg_a_low);
-        self.free_register(reg_a_high);
+        self.free_registers.set(reg_a_low as usize, true);
+        self.free_registers.set(reg_a_high as usize, true);
 
-        self.push(StackValue::Stack(result_offset));
+        self.stack.push(StackValue::Stack(result_offset));
         Ok(())
     }
 
@@ -2488,9 +2473,9 @@ impl Function {
             },
         )?;
         if let StackValue::Register(reg_b) = b {
-            self.free_register(reg_b);
+            self.free_registers.set(reg_b as usize, true);
         }
-        self.push(StackValue::Register(reg_a));
+        self.stack.push(StackValue::Register(reg_a));
         Ok(())
     }
 
@@ -2511,7 +2496,7 @@ impl Function {
         [reg_a, reg_b]
             .iter()
             .filter(|&&r| r != ScratchRegister::R0 && r != ScratchRegister::R1)
-            .for_each(|&r| self.free_register(r));
+            .for_each(|&r| self.free_registers.set(r as usize, true));
 
         match op {
             DivOp::DivS | DivOp::RemS => {
@@ -2527,9 +2512,9 @@ impl Function {
             DivOp::RemS | DivOp::RemU => (ScratchRegister::R1, ScratchRegister::R0),
         };
 
-        self.free_register(other_reg);
+        self.free_registers.set(other_reg as usize, true);
         self.free_registers.set(result_reg as usize, false);
-        self.push(StackValue::Register(result_reg));
+        self.stack.push(StackValue::Register(result_reg));
         Ok(())
     }
 
@@ -2568,10 +2553,10 @@ impl Function {
                 emitter.lshr(0, temp, reg, 32i32)?;
                 emitter.add(0, reg, reg, temp)?;
                 emitter.and(0, reg, reg, 0x7fi32)?;
-                self.free_register(temp);
+                self.free_registers.set(temp as usize, true);
             }
         }
-        self.push(StackValue::Register(reg));
+        self.stack.push(StackValue::Register(reg));
         Ok(())
     }
 
@@ -2612,7 +2597,7 @@ impl Function {
                 }
                 _ => unreachable!(),
             }
-            self.push(StackValue::Register(addr_reg));
+            self.stack.push(StackValue::Register(addr_reg));
         }
 
         #[cfg(not(target_pointer_width = "64"))]
@@ -2683,9 +2668,9 @@ impl Function {
                 _ => unreachable!(),
             }
 
-            self.free_register(temp_reg);
-            self.free_register(addr_reg);
-            self.push(StackValue::Stack(result_offset));
+            self.free_registers.set(temp_reg as usize, true);
+            self.free_registers.set(addr_reg as usize, true);
+            self.stack.push(StackValue::Stack(result_offset));
         }
 
         Ok(())
@@ -2726,8 +2711,8 @@ impl Function {
                 }
                 _ => unreachable!(),
             }
-            self.free_register(value_reg);
-            self.free_register(addr_reg);
+            self.free_registers.set(value_reg as usize, true);
+            self.free_registers.set(addr_reg as usize, true);
         }
 
         #[cfg(not(target_pointer_width = "64"))]
@@ -2781,21 +2766,21 @@ impl Function {
                             emitter.mov32(0, mem_offset(addr_reg, offset), value_reg)?;
                         }
                         _ => {
-                            self.free_register(value_reg);
-                            self.free_register(temp_reg);
-                            self.free_register(addr_reg);
+                            self.free_registers.set(value_reg as usize, true);
+                            self.free_registers.set(temp_reg as usize, true);
+                            self.free_registers.set(addr_reg as usize, true);
                             return Err(CompileError::Invalid(
                                 "64-bit store from register not supported on 32-bit platform"
                                     .into(),
                             ));
                         }
                     }
-                    self.free_register(value_reg);
+                    self.free_registers.set(value_reg as usize, true);
                 }
             }
 
-            self.free_register(temp_reg);
-            self.free_register(addr_reg);
+            self.free_registers.set(temp_reg as usize, true);
+            self.free_registers.set(addr_reg as usize, true);
         }
 
         Ok(())
@@ -2881,8 +2866,8 @@ impl Function {
             }
         }
 
-        self.free_float_register(freg_b);
-        self.push(StackValue::FloatRegister(freg_a));
+        self.free_float_registers.set(freg_b as usize, true);
+        self.stack.push(StackValue::FloatRegister(freg_a));
         Ok(())
     }
 
@@ -2978,7 +2963,7 @@ impl Function {
             }
         }
 
-        self.push(StackValue::FloatRegister(freg));
+        self.stack.push(StackValue::FloatRegister(freg));
         Ok(())
     }
 
@@ -3021,7 +3006,7 @@ impl Function {
             arg_types!([F64, F64] -> F64)
         };
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
 
         if freg_a != FloatRegister::FR0 {
             Self::mov_float(emitter, is_f32, freg_a, FloatRegister::FR0)?;
@@ -3049,7 +3034,7 @@ impl Function {
             arg_types!([F64] -> F64)
         };
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
 
         if freg != FloatRegister::FR0 {
             Self::mov_float(emitter, is_f32, freg, FloatRegister::FR0)?;
@@ -3080,9 +3065,9 @@ impl Function {
         let mut label_end = emitter.put_label()?;
         jump_end.set_label(&mut label_end);
 
-        self.free_float_register(freg_a);
-        self.free_float_register(freg_b);
-        self.push(StackValue::Register(result_reg));
+        self.free_float_registers.set(freg_a as usize, true);
+        self.free_float_registers.set(freg_b as usize, true);
+        self.stack.push(StackValue::Register(result_reg));
         Ok(())
     }
 
@@ -3128,8 +3113,8 @@ impl Function {
                 }
             }
 
-            self.free_register(reg);
-            self.push(StackValue::FloatRegister(freg));
+            self.free_registers.set(reg as usize, true);
+            self.stack.push(StackValue::FloatRegister(freg));
             Ok(())
         }
 
@@ -3163,8 +3148,8 @@ impl Function {
                 }
             }
 
-            self.free_register(reg);
-            self.push(StackValue::FloatRegister(freg));
+            self.free_registers.set(reg as usize, true);
+            self.stack.push(StackValue::FloatRegister(freg));
             Ok(())
         }
     }
@@ -3199,8 +3184,8 @@ impl Function {
             }
         }
 
-        self.free_float_register(freg);
-        self.push(StackValue::Register(reg));
+        self.free_float_registers.set(freg as usize, true);
+        self.stack.push(StackValue::Register(reg));
         Ok(())
     }
 
@@ -3217,7 +3202,7 @@ impl Function {
         } else {
             emitter.conv_f64_from_f32(0, freg, freg)?;
         }
-        self.push(StackValue::FloatRegister(freg));
+        self.stack.push(StackValue::FloatRegister(freg));
         Ok(())
     }
 
@@ -3266,8 +3251,8 @@ impl Function {
                 } else {
                     emitter.mov_f64(0, freg, mem)?;
                 }
-                self.free_register(reg);
-                self.push(StackValue::FloatRegister(freg));
+                self.free_registers.set(reg as usize, true);
+                self.stack.push(StackValue::FloatRegister(freg));
                 return Ok(());
             }
             _ => {
@@ -3277,7 +3262,7 @@ impl Function {
                 )));
             }
         }
-        self.push(StackValue::Register(reg));
+        self.stack.push(StackValue::Register(reg));
         Ok(())
     }
 
@@ -3315,14 +3300,14 @@ impl Function {
             ValType::I32 => {
                 let val_reg = self.ensure_in_register(emitter, value)?;
                 emitter.mov32(0, mem, val_reg)?;
-                self.free_register(val_reg);
+                self.free_registers.set(val_reg as usize, true);
             }
             ValType::I64 => {
                 #[cfg(target_pointer_width = "64")]
                 {
                     let val_reg = self.ensure_in_register(emitter, value)?;
                     emitter.mov(0, mem, val_reg)?;
-                    self.free_register(val_reg);
+                    self.free_registers.set(val_reg as usize, true);
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
@@ -3344,7 +3329,7 @@ impl Function {
                 )));
             }
         }
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
         Ok(())
     }
 
@@ -3363,7 +3348,7 @@ impl Function {
         let reg = self.alloc_register(emitter)?;
         emitter.mov(0, reg, size_ptr as isize)?;
         emitter.mov32(0, reg, mem_offset(reg, 0))?;
-        self.push(StackValue::Register(reg));
+        self.stack.push(StackValue::Register(reg));
         Ok(())
     }
 
@@ -3405,10 +3390,10 @@ impl Function {
         // Move delta to R1 (second argument) if not already there
         if delta_reg != ScratchRegister::R1 && delta_reg != ScratchRegister::R0 {
             emitter.mov(0, ScratchRegister::R1, delta_reg)?;
-            self.free_register(delta_reg);
+            self.free_registers.set(delta_reg as usize, true);
         } else if delta_reg == ScratchRegister::R0 {
             // Already moved to R1 above
-            self.free_register(delta_reg);
+            self.free_registers.set(delta_reg as usize, true);
         }
 
         // Call the grow callback: fn(current_pages: u32, delta: u32) -> i32
@@ -3417,11 +3402,11 @@ impl Function {
         // arg_types for (W, W) -> W: return type W, plus two W arguments
         let arg_types_w2_w = SLJIT_ARG_TYPE_W | (SLJIT_ARG_TYPE_W << 4) | (SLJIT_ARG_TYPE_W << 8);
         emitter.icall(JumpType::Call as i32, arg_types_w2_w, addr_reg)?;
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
 
         // Result is in R0
         self.free_registers.set(ScratchRegister::R0 as usize, false);
-        self.push(StackValue::Register(ScratchRegister::R0));
+        self.stack.push(StackValue::Register(ScratchRegister::R0));
         Ok(())
     }
 
@@ -3485,7 +3470,7 @@ impl Function {
                 let stack_offset = ((i - 3) * 8) as i32;
                 let reg = self.ensure_in_register(emitter, arg.clone())?;
                 emitter.mov(0, mem_sp_offset(stack_offset), reg)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
             }
         }
 
@@ -3499,7 +3484,7 @@ impl Function {
             let reg = self.ensure_in_register(emitter, arg)?;
             if reg != arg_regs[i] {
                 emitter.mov(0, arg_regs[i], reg)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
             }
         }
 
@@ -3509,7 +3494,7 @@ impl Function {
 
         let arg_types = Self::make_arg_types(&func_params, &func_results);
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
 
         // Restore stack pointer if we allocated extra space
         if extra_stack_size > 0 {
@@ -3524,7 +3509,7 @@ impl Function {
         // Handle result
         if result_count > 0 {
             self.free_registers.set(ScratchRegister::R0 as usize, false);
-            self.push(StackValue::Register(ScratchRegister::R0));
+            self.stack.push(StackValue::Register(ScratchRegister::R0));
         }
 
         Ok(())
@@ -3589,7 +3574,7 @@ impl Function {
         emitter.shl32(0, idx_reg, idx_reg, 2i32)?; // * 4
 
         emitter.add(0, func_ptr_reg, func_ptr_reg, idx_reg)?;
-        self.free_register(idx_reg);
+        self.free_registers.set(idx_reg as usize, true);
 
         // Load the function pointer from the table
         emitter.mov(0, func_ptr_reg, mem_offset(func_ptr_reg, 0))?;
@@ -3598,7 +3583,7 @@ impl Function {
         let func_ptr_offset = self.frame_offset;
         self.frame_offset += 8;
         emitter.mov(0, mem_sp_offset(func_ptr_offset), func_ptr_reg)?;
-        self.free_register(func_ptr_reg);
+        self.free_registers.set(func_ptr_reg as usize, true);
 
         // Calculate stack space needed for extra arguments (args 4+)
         let extra_stack_size = Self::get_extra_arg_stack_size(param_count);
@@ -3618,7 +3603,7 @@ impl Function {
                 let stack_offset = ((i - 3) * 8) as i32;
                 let reg = self.ensure_in_register(emitter, arg.clone())?;
                 emitter.mov(0, mem_sp_offset(stack_offset), reg)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
             }
         }
 
@@ -3632,7 +3617,7 @@ impl Function {
             let reg = self.ensure_in_register(emitter, arg)?;
             if reg != arg_regs[i] {
                 emitter.mov(0, arg_regs[i], reg)?;
-                self.free_register(reg);
+                self.free_registers.set(reg as usize, true);
             }
         }
 
@@ -3649,7 +3634,7 @@ impl Function {
         // Call through the function pointer
         let arg_types = Self::make_arg_types(&func_params, &func_results);
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
-        self.free_register(addr_reg);
+        self.free_registers.set(addr_reg as usize, true);
 
         // Restore stack pointer if we allocated extra space
         if extra_stack_size > 0 {
@@ -3664,7 +3649,7 @@ impl Function {
         // Handle result
         if result_count > 0 {
             self.free_registers.set(ScratchRegister::R0 as usize, false);
-            self.push(StackValue::Register(ScratchRegister::R0));
+            self.stack.push(StackValue::Register(ScratchRegister::R0));
         }
 
         Ok(())
@@ -3700,7 +3685,7 @@ impl Function {
         }
 
         // Default case - jump to default target
-        self.free_register(idx_reg);
+        self.free_registers.set(idx_reg as usize, true);
 
         let block_idx = self.blocks.len() - 1 - default_target as usize;
         if let Some(mut label) = self.blocks[block_idx].label {
