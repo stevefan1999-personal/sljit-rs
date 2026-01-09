@@ -7,4 +7,5 @@ edition = "2024"
 
 [dependencies]
 sljit = { version = "*", path = "..", features = ["bindgen"] }
+libc = "0.2"
 

@@ -1,6 +1,5 @@
 use sljit::sys::{self, arg_types, *};
 use sljit::*;
-use std::alloc::Layout;
 use std::error::Error;
 use std::io::{self, Read, Write};
 use std::mem::transmute;
@@ -51,13 +50,13 @@ extern "C" fn bf_getchar() -> isize {
         .unwrap_or(0)
 }
 
-unsafe extern "C" fn bf_calloc(size: isize, count: isize) -> *mut u8 {
-    unsafe {
-        std::alloc::alloc_zeroed(Layout::from_size_align((size * count) as usize, 8).unwrap())
-    }
+extern "C" fn bf_calloc(size: libc::size_t, count: libc::size_t) -> *mut libc::c_void {
+    unsafe { libc::calloc(size, count) }
 }
 
-unsafe extern "C" fn bf_free(_ptr: *mut u8) {}
+extern "C" fn bf_free(ptr: *mut libc::c_void) {
+    unsafe { libc::free(ptr) }
+}
 
 fn compile(source: &str) -> Result<sys::GeneratedCode, Box<dyn Error>> {
     let tokens = tokenize(source);
@@ -186,36 +185,133 @@ fn compile(source: &str) -> Result<sys::GeneratedCode, Box<dyn Error>> {
     Ok(compiler.generate_code())
 }
 
+fn run_bf(name: &str, description: &str, source: &str) -> Result<(), Box<dyn Error>> {
+    println!("=== {} ===", name);
+    if !description.is_empty() {
+        println!("{}", description);
+    }
+    print!("Output: ");
+    io::stdout().flush()?;
+    let code = compile(source)?;
+    let func: fn() = unsafe { transmute(code.get()) };
+    func();
+    println!("\n");
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("=== Hello World ===");
-    let hello_world = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
-    let code = compile(hello_world)?;
-    let func: fn() = unsafe { transmute(code.get()) };
-    func();
-    println!("\n");
+    // 1. Classic Hello World
+    run_bf(
+        "Hello World",
+        "Classic BF hello world program",
+        "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.",
+    )?;
 
-    println!("=== Counter (0-9) ===");
-    // Correct counter: increment from '0' (48) to '9' (57)
-    let counter = "++++++[>++++++++<-]>.+.+.+.+.+.+.+.+.+."; // 6*8=48 ('0'), then print and inc 10 times
-    let code = compile(counter)?;
-    let func: fn() = unsafe { transmute(code.get()) };
-    func();
-    println!("\n");
+    // 2. Counter 0-9
+    run_bf(
+        "Counter (0-9)",
+        "Counts from 0 to 9 using loop optimization (6*8=48 for '0')",
+        "++++++[>++++++++<-]>.+.+.+.+.+.+.+.+.+.",
+    )?;
 
-    println!("=== Simple Test (prints '0') ===");
-    let simple_test = "++++++++++++++++++++++++++++++++++++++++++++++++."; // 48 = '0'
-    let code = compile(simple_test)?;
-    let func: fn() = unsafe { transmute(code.get()) };
-    func();
-    println!("\n");
+    // 3. Print the Alphabet (A-Z)
+    run_bf(
+        "Alphabet (A-Z)",
+        "Prints the uppercase alphabet using nested loops",
+        "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.+.",
+    )?;
 
-    println!("=== Addition (2 + 5 = 7, prints as '7') ===");
-    // cell[0]=2, loop adds 5 twice to cell[1] = 10, then add 45 to get 55 ('7')
-    let addition = "++[>+++++<-]>+++++++++++++++++++++++++++++++++++++++++++++.";
-    let code = compile(addition)?;
-    let func: fn() = unsafe { transmute(code.get()) };
-    func();
-    println!("\n");
+    // 4. Cell Movement Demo
+    run_bf(
+        "Cell Movement Demo",
+        "Demonstrates cell pointer movement: prints 'ABCDE'",
+        "++++++++[>++++++++<-]>+.+.+.+.+.",
+    )?;
 
+    // 5. Nested Loop Demo
+    run_bf(
+        "Nested Loop Demo",
+        "Uses nested loops to compute and print 'X' (88 = 8*11)",
+        "++++++++[>+++++++++++<-]>.",
+    )?;
+
+    // 6. Simple Banner
+    run_bf(
+        "Banner: BF",
+        "Prints 'BF' (Brainfuck initials)",
+        "++++++++[>++++++++<-]>++.++++.",
+    )?;
+
+    // 7. Countdown 9 to 0
+    // 7*8=56, +1=57='9', then print and decrement 10 times to reach '0'
+    run_bf(
+        "Countdown (9-0)",
+        "Counts down from 9 to 0",
+        "+++++++[>++++++++<-]>+.-.-.-.-.-.-.-.-.-.",
+    )?;
+
+    // 8. Character Transformation - print 'N' directly
+    // 'N' = 78 = 6*13
+    run_bf(
+        "Character Transformation",
+        "Prints 'N' (ASCII 78 = 6*13)",
+        "++++++[>+++++++++++++<-]>.",
+    )?;
+
+    // 9. Triangle Pattern
+    run_bf(
+        "Triangle Pattern",
+        "Prints a simple ASCII triangle",
+        ">++++++++++[<++++>-]<++.>++++++++++.[-]<[-]>++++++++++[<++++>-]<++..>++++++++++.[-]<[-]>++++++++++[<++++>-]<++...>++++++++++.",
+    )?;
+
+    // 10. Exclamation marks
+    // '!' = 33 = 3*11, print it 5 times
+    run_bf(
+        "Exclamation Marks (x5)",
+        "Prints 5 exclamation marks",
+        "+++[>+++++++++++<-]>.....",
+    )?;
+
+    // 11. Print "Hi"
+    // 'H' = 72 = 8*9, 'i' = 105 = 7*15
+    run_bf(
+        "Hi",
+        "Simple 'Hi' output",
+        "++++++++[>+++++++++<-]>.>+++++++[>+++++++++++++++<-]>.",
+    )?;
+
+    // 12. Print 'C' (ASCII 67 = 8*8+3)
+    run_bf(
+        "Multiplication Demo",
+        "Prints 'C' using 8*8+3=67",
+        "++++++++[>++++++++<-]>+++.",
+    )?;
+
+    // 13. Addition Demo: 3+5=8, then add 48 to get '8'
+    run_bf(
+        "Addition Demo",
+        "Computes 3+5=8, prints '8' (ASCII 56)",
+        "+++>+++++[<+>-]<++++++++++++++++++++++++++++++++++++++++++++++++.",
+    )?;
+
+    // 14. Loop counter - prints digits 1 to 5
+    // cell0=5 (counter), cell2=49='1' (via 7*7)
+    // Loop: print cell2, increment it, decrement counter
+    run_bf(
+        "Loop Counter (1-5)",
+        "Demonstrates loop counting: prints 12345",
+        "+++++>+++++++[>+++++++<-]><<[>>.+<<-]",
+    )?;
+
+    // 15. Fibonacci first 6 values as string: prints "112358"
+    run_bf(
+        "Fibonacci (112358)",
+        "Prints first 6 Fibonacci numbers as digits",
+        // cell0 = '0' (48), then print 1,1,2,3,5,8 via increments
+        "++++++[>++++++++<-]>+..+.+.++.+++.",
+    )?;
+
+    println!("=== All examples completed! ===");
     Ok(())
 }
