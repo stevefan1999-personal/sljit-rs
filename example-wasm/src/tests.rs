@@ -460,7 +460,6 @@ fn test_shift_operations() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_basic() {
     // Test i64.const and basic operations on 64-bit platforms
     let body = [
@@ -1017,7 +1016,6 @@ fn test_br_if() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_arithmetic() {
     // Test i64 add and sub
     let body = [
@@ -1067,7 +1065,6 @@ fn test_i64_arithmetic() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_bitwise() {
     // Test i64 and, or, xor
     let body = [
@@ -1114,7 +1111,6 @@ fn test_i64_bitwise() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_shifts() {
     // Test i64 shl, shr_s, shr_u
     let body = [
@@ -1164,7 +1160,6 @@ fn test_i64_shifts() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_extend() {
     // Test i64.extend_i32_s: sign extension should set all upper bits for -1
     // To verify: extend -1, shift right 32 bits, wrap to i32
@@ -1558,7 +1553,6 @@ fn test_memory_dynamic_offset() {
 // I64 Memory store/load tests
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_store_load() {
     // Test I64Store and I64Load
     let body = [
@@ -1600,7 +1594,6 @@ fn test_memory_i64_store_load() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_store_load_full_value() {
     // Verify full 64-bit value is stored and loaded correctly
     // by checking both upper and lower 32 bits
@@ -1647,7 +1640,6 @@ fn test_memory_i64_store_load_full_value() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load8_unsigned() {
     // Test I64Load8U - load byte and zero-extend to 64-bit
     let body = [
@@ -1686,7 +1678,6 @@ fn test_memory_i64_load8_unsigned() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load8_signed() {
     // Test I64Load8S - load byte and sign-extend to 64-bit
     let body = [
@@ -1725,7 +1716,6 @@ fn test_memory_i64_load8_signed() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load16_unsigned() {
     // Test I64Load16U - load 16-bit and zero-extend to 64-bit
     let body = [
@@ -1764,7 +1754,6 @@ fn test_memory_i64_load16_unsigned() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load16_signed() {
     // Test I64Load16S - load 16-bit and sign-extend to 64-bit
     let body = [
@@ -1803,7 +1792,6 @@ fn test_memory_i64_load16_signed() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load32_unsigned() {
     // Test I64Load32U - load 32-bit and zero-extend to 64-bit
     let body = [
@@ -1847,7 +1835,6 @@ fn test_memory_i64_load32_unsigned() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load32_signed() {
     // Test I64Load32S - load 32-bit and sign-extend to 64-bit
     let body = [
@@ -1891,7 +1878,6 @@ fn test_memory_i64_load32_signed() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_with_offset() {
     // Test I64 store/load with static offset
     let body = [
@@ -1933,7 +1919,6 @@ fn test_memory_i64_with_offset() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_i64_multiple_stores_loads() {
     // Store multiple I64 values and load them back
     let body = [
@@ -2152,7 +2137,6 @@ fn test_memory_f32_multiple_stores_loads() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load() {
     // Test F64Store and F64Load
     let body = [
@@ -2196,7 +2180,6 @@ fn test_memory_f64_store_load() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load_upper_bits() {
     // Test F64Store and F64Load - verify upper 32 bits
     let body = [
@@ -2242,7 +2225,6 @@ fn test_memory_f64_store_load_upper_bits() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load_with_offset() {
     // Test F64Store and F64Load with static offset
     let body = [
@@ -2287,7 +2269,6 @@ fn test_memory_f64_store_load_with_offset() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_f64_multiple_stores_loads() {
     // Store multiple F64 values and load them back, then add them
 
@@ -2406,7 +2387,6 @@ fn test_memory_f32_dynamic_offset() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_memory_f64_dynamic_offset() {
     // Use a parameter as the dynamic offset for F64
     let body = [
@@ -2932,7 +2912,6 @@ fn test_f32_ge() {
 // F64 Arithmetic Operations
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_add() {
     // Test F64Add: 1.5 + 2.5 = 4.0
     let body = [
@@ -2959,7 +2938,6 @@ fn test_f64_add() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_sub() {
     // Test F64Sub: 5.0 - 2.0 = 3.0
     let body = [
@@ -2986,7 +2964,6 @@ fn test_f64_sub() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_mul() {
     // Test F64Mul: 3.0 * 4.0 = 12.0
     let body = [
@@ -3013,7 +2990,6 @@ fn test_f64_mul() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_div() {
     // Test F64Div: 10.0 / 2.0 = 5.0
     let body = [
@@ -3040,7 +3016,6 @@ fn test_f64_div() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_min() {
     // Test F64Min: min(3.0, 5.0) = 3.0
     let body = [
@@ -3067,7 +3042,6 @@ fn test_f64_min() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_max() {
     // Test F64Max: max(3.0, 5.0) = 5.0
     let body = [
@@ -3094,7 +3068,6 @@ fn test_f64_max() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_copysign() {
     // Test F64Copysign: copysign(3.0, -1.0) = -3.0
     let body = [
@@ -3123,7 +3096,6 @@ fn test_f64_copysign() {
 // F64 Unary Operations
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_neg() {
     // Test F64Neg: neg(5.0) = -5.0
     let body = [
@@ -3147,7 +3119,6 @@ fn test_f64_neg() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_abs() {
     // Test F64Abs: abs(-5.0) = 5.0
     let body = [
@@ -3171,7 +3142,6 @@ fn test_f64_abs() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_sqrt() {
     // Test F64Sqrt: sqrt(16.0) = 4.0
     let body = [
@@ -3195,7 +3165,6 @@ fn test_f64_sqrt() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_ceil() {
     // Test F64Ceil: ceil(2.3) = 3.0
     let body = [
@@ -3219,7 +3188,6 @@ fn test_f64_ceil() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_floor() {
     // Test F64Floor: floor(2.7) = 2.0
     let body = [
@@ -3243,7 +3211,6 @@ fn test_f64_floor() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_trunc() {
     // Test F64Trunc: trunc(-2.7) = -2.0
     let body = [
@@ -3267,7 +3234,6 @@ fn test_f64_trunc() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_nearest() {
     // Test F64Nearest: nearest(2.5) = 2.0 (round to even)
     let body = [
@@ -3294,7 +3260,6 @@ fn test_f64_nearest() {
 // F64 Comparison Operations
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_eq() {
     // Test F64Eq: 3.0 == 3.0
     let body = [
@@ -3316,7 +3281,6 @@ fn test_f64_eq() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_ne() {
     // Test F64Ne: 3.0 != 4.0
     let body = [
@@ -3338,7 +3302,6 @@ fn test_f64_ne() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_lt() {
     // Test F64Lt: 3.0 < 4.0
     let body = [
@@ -3360,7 +3323,6 @@ fn test_f64_lt() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_gt() {
     // Test F64Gt: 5.0 > 3.0
     let body = [
@@ -3382,7 +3344,6 @@ fn test_f64_gt() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_le() {
     // Test F64Le: 3.0 <= 3.0
     let body = [
@@ -3404,7 +3365,6 @@ fn test_f64_le() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_ge() {
     // Test F64Ge: 5.0 >= 3.0
     let body = [
@@ -3466,7 +3426,6 @@ fn test_f32_convert_i32_u() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_convert_i32_s() {
     // Test F64ConvertI32S: convert signed i32 to f64
     // -10 as f64 = -10.0
@@ -3489,7 +3448,6 @@ fn test_f64_convert_i32_s() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_convert_i64_s() {
     // Test F64ConvertI64S: convert signed i64 to f64
     // 1000000 as f64 = 1000000.0
@@ -3550,7 +3508,6 @@ fn test_i32_trunc_f32_u() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i32_trunc_f64_s() {
     // Test I32TruncF64S: truncate f64 to signed i32
     // -100.9 truncated = -100
@@ -3570,7 +3527,6 @@ fn test_i32_trunc_f64_s() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_i64_trunc_f64_s() {
     // Test I64TruncF64S: truncate f64 to signed i64
     // -1000000.5 truncated = -1000000
@@ -3667,7 +3623,6 @@ fn test_f32_reinterpret_i32() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_reinterpret_i64() {
     // Test F64ReinterpretI64: reinterpret i64 bits as f64
     let body = [
@@ -3730,7 +3685,6 @@ fn test_f32_combined_operations() {
 }
 
 #[test]
-#[cfg(target_pointer_width = "64")]
 fn test_f64_combined_operations() {
     // Test a combined expression: sqrt(16.0) + abs(-2.0) = 4.0 + 2.0 = 6.0
     let body = [

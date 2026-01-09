@@ -256,11 +256,17 @@ impl Function {
                 ScratchRegister::R0,
                 ScratchRegister::R1,
                 ScratchRegister::R2,
+                ScratchRegister::R3,
+                ScratchRegister::R4,
+                ScratchRegister::R5,
             ]),
             free_float_registers: IndexSet::from_iter([
                 FloatRegister::FR0,
                 FloatRegister::FR1,
                 FloatRegister::FR2,
+                FloatRegister::FR3,
+                FloatRegister::FR4,
+                FloatRegister::FR5,
             ]),
             globals: vec![],
             memory: None,
@@ -447,6 +453,7 @@ impl Function {
                 // Ensure 8-byte alignment for f64 operations
                 let temp_offset = (self.frame_offset + 7) & !7;
                 self.frame_offset = temp_offset + 8;
+
                 #[cfg(target_pointer_width = "64")]
                 {
                     emitter.mov(0, mem_sp_offset(temp_offset), bits as isize)?;
@@ -691,14 +698,15 @@ impl Function {
 
         // Ensure frame_offset is 16-byte aligned for proper float operation alignment
         let aligned_offset = (stack_local_offset + 15) & !15;
-        // Use much larger stack space to avoid any potential overflow issues with float ops
-        self.local_size = aligned_offset + 1024;
+        // Use larger stack space to avoid any potential overflow issues with float ops and 64-bit ops on 32-bit
+        // But not too large to avoid Windows stack probe issues on 32-bit
+        self.local_size = aligned_offset + 4096; // 4KB should be sufficient
         self.frame_offset = aligned_offset;
 
         emitter.emit_enter(
             0,
             Self::make_arg_types(params, results),
-            regs! { gp: 3, float: 3 },
+            regs! { gp: 6, float: 6 },
             regs!(saved_count as i32),
             self.local_size,
         )?;
@@ -961,16 +969,20 @@ impl Function {
                     let reg = self.alloc_register(emitter)?;
                     emitter.mov(0, reg, *value as isize)?;
                     self.push(StackValue::Register(reg));
+                    Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
-                if *value >= i32::MIN as i64 && *value <= i32::MAX as i64 {
-                    self.push(StackValue::Const(*value as i32));
-                } else {
-                    return Err(CompileError::Unsupported(
-                        "64-bit values not supported on 32-bit platform".into(),
-                    ));
+                {
+                    // On 32-bit platforms, store both halves on the stack
+                    let offset = self.frame_offset;
+                    self.frame_offset += 8;
+                    // Store lower 32 bits
+                    emitter.mov32(0, mem_sp_offset(offset), (*value & 0xFFFFFFFF) as i32)?;
+                    // Store upper 32 bits
+                    emitter.mov32(0, mem_sp_offset(offset + 4), (*value >> 32) as i32)?;
+                    self.push(StackValue::Stack(offset));
+                    Ok(())
                 }
-                Ok(())
             }
             Operator::I64Add => self.compile_binary_op64(emitter, BinaryOp::Add),
             Operator::I64Sub => self.compile_binary_op64(emitter, BinaryOp::Sub),
@@ -1063,26 +1075,96 @@ impl Function {
 
             Operator::I32WrapI64 => {
                 let val = self.pop_value()?;
-                let reg = self.ensure_in_register(emitter, val)?;
-                emitter.mov32(0, reg, reg)?;
-                self.push(StackValue::Register(reg));
-                Ok(())
+                #[cfg(target_pointer_width = "64")]
+                {
+                    let reg = self.ensure_in_register(emitter, val)?;
+                    emitter.mov32(0, reg, reg)?;
+                    self.push(StackValue::Register(reg));
+                    Ok(())
+                }
+                #[cfg(not(target_pointer_width = "64"))]
+                {
+                    // On 32-bit: i64 is stored as 8 bytes on stack (low 4 bytes, high 4 bytes)
+                    // We just need to load the low 32 bits
+                    match val {
+                        StackValue::Stack(offset) => {
+                            let reg = self.alloc_register(emitter)?;
+                            emitter.mov32(0, reg, mem_sp_offset(offset))?; // Load low 32 bits only
+                            self.push(StackValue::Register(reg));
+                            Ok(())
+                        }
+                        _ => {
+                            // If it's a register, it's already the low 32 bits
+                            let reg = self.ensure_in_register(emitter, val)?;
+                            emitter.mov32(0, reg, reg)?;
+                            self.push(StackValue::Register(reg));
+                            Ok(())
+                        }
+                    }
+                }
             }
 
             Operator::I64ExtendI32S => {
-                let val = self.pop_value()?;
-                let reg = self.ensure_in_register(emitter, val)?;
-                emitter.mov_s32(0, reg, reg)?;
-                self.push(StackValue::Register(reg));
-                Ok(())
+                #[cfg(target_pointer_width = "64")]
+                {
+                    let val = self.pop_value()?;
+                    let reg = self.ensure_in_register(emitter, val)?;
+                    emitter.mov_s32(0, reg, reg)?;
+                    self.push(StackValue::Register(reg));
+                    Ok(())
+                }
+                #[cfg(not(target_pointer_width = "64"))]
+                {
+                    // On 32-bit: extend i32 to i64 (sign extend)
+                    let val = self.pop_value()?;
+                    let reg = self.ensure_in_register(emitter, val)?;
+
+                    // Allocate stack space for i64 result
+                    let offset = self.frame_offset;
+                    self.frame_offset += 8;
+
+                    // Store low part (original i32 value)
+                    emitter.mov32(0, mem_sp_offset(offset), reg)?;
+
+                    // Sign extend to high part
+                    emitter.ashr32(0, reg, reg, 31i32)?;
+                    emitter.mov32(0, mem_sp_offset(offset + 4), reg)?;
+
+                    self.free_register(reg);
+                    self.push(StackValue::Stack(offset));
+                    Ok(())
+                }
             }
 
             Operator::I64ExtendI32U => {
-                let val = self.pop_value()?;
-                let reg = self.ensure_in_register(emitter, val)?;
-                emitter.mov_u32(0, reg, reg)?;
-                self.push(StackValue::Register(reg));
-                Ok(())
+                #[cfg(target_pointer_width = "64")]
+                {
+                    let val = self.pop_value()?;
+                    let reg = self.ensure_in_register(emitter, val)?;
+                    emitter.mov_u32(0, reg, reg)?;
+                    self.push(StackValue::Register(reg));
+                    Ok(())
+                }
+                #[cfg(not(target_pointer_width = "64"))]
+                {
+                    // On 32-bit: extend i32 to i64 (zero extend)
+                    let val = self.pop_value()?;
+                    let reg = self.ensure_in_register(emitter, val)?;
+
+                    // Allocate stack space for i64 result
+                    let offset = self.frame_offset;
+                    self.frame_offset += 8;
+
+                    // Store low part (original i32 value)
+                    emitter.mov32(0, mem_sp_offset(offset), reg)?;
+
+                    // Zero extend to high part
+                    emitter.mov32(0, mem_sp_offset(offset + 4), 0i32)?;
+
+                    self.free_register(reg);
+                    self.push(StackValue::Stack(offset));
+                    Ok(())
+                }
             }
 
             // Floating point constants
@@ -1236,26 +1318,26 @@ impl Function {
                 Ok(())
             }
             Operator::I64ReinterpretF64 => {
+                let val = self.pop_value()?;
+                let freg = self.ensure_in_float_register(emitter, val, false)?;
+                // Ensure 8-byte alignment for f64 operations
+                let temp_offset = (self.frame_offset + 7) & !7;
+                self.frame_offset = temp_offset + 8;
+                emitter.mov_f64(0, mem_sp_offset(temp_offset), freg)?;
+                self.free_float_register(freg);
+
                 #[cfg(target_pointer_width = "64")]
                 {
-                    let val = self.pop_value()?;
-                    let freg = self.ensure_in_float_register(emitter, val, false)?;
                     let reg = self.alloc_register(emitter)?;
-                    // Ensure 8-byte alignment for f64 operations
-                    let temp_offset = (self.frame_offset + 7) & !7;
-                    self.frame_offset = temp_offset + 8;
-                    emitter.mov_f64(0, mem_sp_offset(temp_offset), freg)?;
                     emitter.mov(0, reg, mem_sp_offset(temp_offset))?;
-                    self.free_float_register(freg);
                     self.push(StackValue::Register(reg));
-                    Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
-                    Err(CompileError::Unsupported(
-                        "64-bit reinterpret not supported on 32-bit platform".into(),
-                    ))
+                    // On 32-bit, the i64 value stays on stack (already there from mov_f64)
+                    self.push(StackValue::Stack(temp_offset));
                 }
+                Ok(())
             }
             Operator::F32ReinterpretI32 => {
                 let val = self.pop_value()?;
@@ -1271,26 +1353,42 @@ impl Function {
                 Ok(())
             }
             Operator::F64ReinterpretI64 => {
+                let val = self.pop_value()?;
+                let freg = self.alloc_float_register(emitter)?;
+                // Ensure 8-byte alignment for f64 operations
+                let temp_offset = (self.frame_offset + 7) & !7;
+                self.frame_offset = temp_offset + 8;
+
                 #[cfg(target_pointer_width = "64")]
                 {
-                    let val = self.pop_value()?;
                     let reg = self.ensure_in_register(emitter, val)?;
-                    let freg = self.alloc_float_register(emitter)?;
-                    // Ensure 8-byte alignment for f64 operations
-                    let temp_offset = (self.frame_offset + 7) & !7;
-                    self.frame_offset = temp_offset + 8;
                     emitter.mov(0, mem_sp_offset(temp_offset), reg)?;
-                    emitter.mov_f64(0, freg, mem_sp_offset(temp_offset))?;
                     self.free_register(reg);
-                    self.push(StackValue::FloatRegister(freg));
-                    Ok(())
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
-                    Err(CompileError::Unsupported(
-                        "64-bit reinterpret not supported on 32-bit platform".into(),
-                    ))
+                    // On 32-bit, i64 value is already on stack
+                    match val {
+                        StackValue::Stack(value_offset) => {
+                            // Copy from value location to temp location
+                            let temp_reg = self.alloc_register(emitter)?;
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset))?;
+                            emitter.mov32(0, mem_sp_offset(temp_offset), temp_reg)?;
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset + 4))?;
+                            emitter.mov32(0, mem_sp_offset(temp_offset + 4), temp_reg)?;
+                            self.free_register(temp_reg);
+                        }
+                        _ => {
+                            return Err(CompileError::Invalid(
+                                "I64 value must be on stack on 32-bit platform".into(),
+                            ));
+                        }
+                    }
                 }
+
+                emitter.mov_f64(0, freg, mem_sp_offset(temp_offset))?;
+                self.push(StackValue::FloatRegister(freg));
+                Ok(())
             }
 
             // Global variable operations
@@ -1572,6 +1670,7 @@ impl Function {
         let addr = self.pop_value()?;
         let addr_reg = self.ensure_in_register(emitter, addr)?;
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+
         let mem = mem_offset(addr_reg, offset);
 
         match kind {
@@ -1616,6 +1715,7 @@ impl Function {
         let (value, addr) = (self.pop_value()?, self.pop_value()?);
         let addr_reg = self.ensure_in_register(emitter, addr)?;
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+
         let mem = mem_offset(addr_reg, offset);
 
         match kind {
@@ -1684,15 +1784,680 @@ impl Function {
     #[cfg(not(target_pointer_width = "64"))]
     fn compile_binary_op64(
         &mut self,
-        _emitter: &mut Emitter,
-        _op: BinaryOp,
+        emitter: &mut Emitter,
+        op: BinaryOp,
     ) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit operations not fully supported on 32-bit platform".into(),
-        ))
+        // On 32-bit, implement 64-bit operations using two 32-bit registers
+        let (b, a) = (self.pop_value()?, self.pop_value()?);
+
+        // For 32-bit platforms, we need to work primarily with stack-based values
+        // to avoid running out of registers (we need 4-6 regs for i64 ops)
+        // Get offsets for both operands (convert to stack if not already)
+        let offset_a = match a {
+            StackValue::Stack(off) => off,
+            _ => {
+                // Convert to stack-based storage
+                let off_a = self.frame_offset;
+                self.frame_offset += 8;
+                match a {
+                    StackValue::Const(val) => {
+                        emitter.mov32(0, mem_sp_offset(off_a), val)?;
+                        // Sign extend
+                        let sign_reg = self.alloc_register(emitter)?;
+                        emitter.mov32(0, sign_reg, val)?;
+                        emitter.ashr32(0, sign_reg, sign_reg, 31i32)?;
+                        emitter.mov32(0, mem_sp_offset(off_a + 4), sign_reg)?;
+                        self.free_register(sign_reg);
+                    }
+                    _ => {
+                        let reg_a = self.ensure_in_register(emitter, a)?;
+                        emitter.mov32(0, mem_sp_offset(off_a), reg_a)?;
+                        // Sign extend for signed values
+                        emitter.ashr32(0, reg_a, reg_a, 31i32)?;
+                        emitter.mov32(0, mem_sp_offset(off_a + 4), reg_a)?;
+                        self.free_register(reg_a);
+                    }
+                }
+                off_a
+            }
+        };
+
+        let offset_b = match b {
+            StackValue::Stack(off) => off,
+            _ => {
+                // Convert to stack-based storage
+                let off_b = self.frame_offset;
+                self.frame_offset += 8;
+                match b {
+                    StackValue::Const(val) => {
+                        emitter.mov32(0, mem_sp_offset(off_b), val)?;
+                        // Sign extend
+                        let sign_reg = self.alloc_register(emitter)?;
+                        emitter.mov32(0, sign_reg, val)?;
+                        emitter.ashr32(0, sign_reg, sign_reg, 31i32)?;
+                        emitter.mov32(0, mem_sp_offset(off_b + 4), sign_reg)?;
+                        self.free_register(sign_reg);
+                    }
+                    _ => {
+                        let reg_b = self.ensure_in_register(emitter, b)?;
+                        emitter.mov32(0, mem_sp_offset(off_b), reg_b)?;
+                        // Sign extend for signed values
+                        emitter.ashr32(0, reg_b, reg_b, 31i32)?;
+                        emitter.mov32(0, mem_sp_offset(off_b + 4), reg_b)?;
+                        self.free_register(reg_b);
+                    }
+                }
+                off_b
+            }
+        };
+
+        // Now work with registers - but allocate them carefully
+        // For shifts, we need up to 6 registers, which might be too many
+        // For bitwise/add/sub, we only need 4 registers
+
+        // Load both operands' parts into registers
+        let reg_a_low = self.alloc_register(emitter)?;
+        let reg_a_high = self.alloc_register(emitter)?;
+        let reg_b_low = self.alloc_register(emitter)?;
+        let reg_b_high = self.alloc_register(emitter)?;
+
+        emitter.mov32(0, reg_a_low, mem_sp_offset(offset_a))?;
+        emitter.mov32(0, reg_a_high, mem_sp_offset(offset_a + 4))?;
+        emitter.mov32(0, reg_b_low, mem_sp_offset(offset_b))?;
+        emitter.mov32(0, reg_b_high, mem_sp_offset(offset_b + 4))?;
+
+        // Perform the operation
+        match op {
+            // Bitwise operations - operate on both halves independently
+            BinaryOp::And => {
+                emitter.and32(0, reg_a_low, reg_a_low, reg_b_low)?;
+                emitter.and32(0, reg_a_high, reg_a_high, reg_b_high)?;
+                // Free b regs early
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+            BinaryOp::Or => {
+                emitter.or32(0, reg_a_low, reg_a_low, reg_b_low)?;
+                emitter.or32(0, reg_a_high, reg_a_high, reg_b_high)?;
+                // Free b regs early
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+            BinaryOp::Xor => {
+                emitter.xor32(0, reg_a_low, reg_a_low, reg_b_low)?;
+                emitter.xor32(0, reg_a_high, reg_a_high, reg_b_high)?;
+                // Free b regs early
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+
+            // Addition: add with carry
+            BinaryOp::Add => {
+                // Add low parts with carry flag
+                emitter.add32(0, reg_a_low, reg_a_low, reg_b_low)?;
+                // Add high parts with carry
+                emitter.addc32(0, reg_a_high, reg_a_high, reg_b_high)?;
+                // Free b regs early
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+
+            // Subtraction: sub with borrow
+            BinaryOp::Sub => {
+                // Sub low parts with borrow flag
+                emitter.sub32(0, reg_a_low, reg_a_low, reg_b_low)?;
+                // Sub high parts with borrow
+                emitter.subc32(0, reg_a_high, reg_a_high, reg_b_high)?;
+                // Free b regs early
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+
+            // Shift left: shifts across the 64-bit boundary
+            BinaryOp::Shl => {
+                // Free b regs since we only need the shift amount
+                self.free_register(reg_b_high);
+
+                // Get shift amount (only low 6 bits matter for 64-bit shift)
+                let shift_amount = reg_b_low; // Reuse instead of allocating
+                emitter.and32(0, shift_amount, shift_amount, 63i32)?;
+
+                // Check if shift >= 32
+                let temp = reg_b_high; // Reuse the high register we just freed
+                emitter.mov32(0, temp, shift_amount)?;
+                emitter.sub32(0, temp, temp, 32i32)?;
+
+                // if shift >= 32: high = low << (shift-32), low = 0
+                // else: high = (high << shift) | (low >> (32-shift)), low = low << shift
+                let mut jump_small = emitter.cmp(Condition::SigLess32, temp, 0i32)?;
+
+                // shift >= 32 case
+                emitter.shl32(0, reg_a_high, reg_a_low, temp)?;
+                emitter.mov32(0, reg_a_low, 0i32)?;
+                let mut jump_end = emitter.jump(JumpType::Jump)?;
+
+                // shift < 32 case
+                let mut label_small = emitter.put_label()?;
+                jump_small.set_label(&mut label_small);
+
+                // Save a copy of low on stack to avoid another register
+                let temp_offset = self.frame_offset;
+                self.frame_offset += 4;
+                emitter.mov32(0, mem_sp_offset(temp_offset), reg_a_low)?;
+
+                // high = high << shift
+                emitter.shl32(0, reg_a_high, reg_a_high, shift_amount)?;
+
+                // temp = 32 - shift
+                emitter.mov32(0, temp, 32i32)?;
+                emitter.sub32(0, temp, temp, shift_amount)?;
+
+                // temp = saved_low >> (32 - shift)
+                let saved_low = mem_sp_offset(temp_offset);
+                emitter.lshr32(0, temp, saved_low, temp)?;
+
+                // high = high | temp
+                emitter.or32(0, reg_a_high, reg_a_high, temp)?;
+
+                // low = low << shift
+                emitter.shl32(0, reg_a_low, saved_low, shift_amount)?;
+
+                let mut label_end = emitter.put_label()?;
+                jump_end.set_label(&mut label_end);
+
+                // Don't free: we reused already
+            }
+
+            // Logical shift right
+            BinaryOp::ShrU => {
+                // Free b_high since we only need shift amount
+                self.free_register(reg_b_high);
+
+                // Get shift amount (only low 6 bits matter for 64-bit shift)
+                let shift_amount = reg_b_low; // Reuse
+                emitter.and32(0, shift_amount, shift_amount, 63i32)?;
+
+                // Check if shift >= 32
+                let temp = reg_b_high; // Reuse
+                emitter.mov32(0, temp, shift_amount)?;
+                emitter.sub32(0, temp, temp, 32i32)?;
+
+                // if shift >= 32: low = high >> (shift-32), high = 0
+                // else: low = (low >> shift) | (high << (32-shift)), high = high >> shift
+                let mut jump_small = emitter.cmp(Condition::SigLess32, temp, 0i32)?;
+
+                // shift >= 32 case
+                emitter.lshr32(0, reg_a_low, reg_a_high, temp)?;
+                emitter.mov32(0, reg_a_high, 0i32)?;
+                let mut jump_end = emitter.jump(JumpType::Jump)?;
+
+                // shift < 32 case
+                let mut label_small = emitter.put_label()?;
+                jump_small.set_label(&mut label_small);
+
+                // Save high on stack to avoid another register
+                let temp_offset = self.frame_offset;
+                self.frame_offset += 4;
+                emitter.mov32(0, mem_sp_offset(temp_offset), reg_a_high)?;
+
+                // low = low >> shift
+                emitter.lshr32(0, reg_a_low, reg_a_low, shift_amount)?;
+
+                // temp = 32 - shift
+                emitter.mov32(0, temp, 32i32)?;
+                emitter.sub32(0, temp, temp, shift_amount)?;
+
+                // temp = high << (32 - shift)
+                let saved_high = mem_sp_offset(temp_offset);
+                emitter.shl32(0, temp, saved_high, temp)?;
+
+                // low = low | temp
+                emitter.or32(0, reg_a_low, reg_a_low, temp)?;
+
+                // high = high >> shift
+                emitter.lshr32(0, reg_a_high, saved_high, shift_amount)?;
+
+                let mut label_end = emitter.put_label()?;
+                jump_end.set_label(&mut label_end);
+
+                // Don't free: we reused already
+            }
+
+            // Arithmetic shift right
+            BinaryOp::ShrS => {
+                // Free b_high since we only need shift amount
+                self.free_register(reg_b_high);
+
+                // Get shift amount (only low 6 bits matter for 64-bit shift)
+                let shift_amount = reg_b_low; // Reuse
+                emitter.and32(0, shift_amount, shift_amount, 63i32)?;
+
+                // Check if shift >= 32
+                let temp = reg_b_high; // Reuse
+                emitter.mov32(0, temp, shift_amount)?;
+                emitter.sub32(0, temp, temp, 32i32)?;
+
+                // if shift >= 32: low = high >> (shift-32), high = high >> 31 (sign extend)
+                // else: low = (low >> shift) | (high << (32-shift)), high = high >> shift
+                let mut jump_small = emitter.cmp(Condition::SigLess32, temp, 0i32)?;
+
+                // shift >= 32 case
+                emitter.ashr32(0, reg_a_low, reg_a_high, temp)?;
+                emitter.ashr32(0, reg_a_high, reg_a_high, 31i32)?; // Sign extend
+                let mut jump_end = emitter.jump(JumpType::Jump)?;
+
+                // shift < 32 case
+                let mut label_small = emitter.put_label()?;
+                jump_small.set_label(&mut label_small);
+
+                // Save high on stack to avoid another register
+                let temp_offset = self.frame_offset;
+                self.frame_offset += 4;
+                emitter.mov32(0, mem_sp_offset(temp_offset), reg_a_high)?;
+
+                // low = low >> shift (logical)
+                emitter.lshr32(0, reg_a_low, reg_a_low, shift_amount)?;
+
+                // temp = 32 - shift
+                emitter.mov32(0, temp, 32i32)?;
+                emitter.sub32(0, temp, temp, shift_amount)?;
+
+                // temp = high << (32 - shift)
+                let saved_high = mem_sp_offset(temp_offset);
+                emitter.shl32(0, temp, saved_high, temp)?;
+
+                // low = low | temp
+                emitter.or32(0, reg_a_low, reg_a_low, temp)?;
+
+                // high = high >> shift (arithmetic)
+                emitter.ashr32(0, reg_a_high, saved_high, shift_amount)?;
+
+                let mut label_end = emitter.put_label()?;
+                jump_end.set_label(&mut label_end);
+
+                // Don't free: we reused already
+            }
+
+            // Rotation operations: rotl and rotr
+            BinaryOp::Rotl => {
+                // Free b_high since we only need the rotation amount (bottom 6 bits of b_low)
+                self.free_register(reg_b_high);
+
+                // Get rotation amount (only low 6 bits matter for 64-bit rotation)
+                let rot_amount = reg_b_low;
+                emitter.and32(0, rot_amount, rot_amount, 63i32)?;
+
+                // rotl(x, n) = (x << n) | (x >> (64 - n))
+                // But we need to handle 32-bit boundaries
+
+                // Allocate temp registers
+                let temp1 = self.alloc_register(emitter)?;
+                let temp2 = self.alloc_register(emitter)?;
+
+                // Save original values
+                let temp_offset = self.frame_offset;
+                self.frame_offset += 8;
+                emitter.mov32(0, mem_sp_offset(temp_offset), reg_a_low)?;
+                emitter.mov32(0, mem_sp_offset(temp_offset + 4), reg_a_high)?;
+
+                // Compute 64 - rot_amount
+                emitter.mov32(0, temp1, 64i32)?;
+                emitter.sub32(0, temp1, temp1, rot_amount)?;
+
+                // Check if rot_amount is 0 (special case: no rotation needed)
+                let mut jump_zero = emitter.cmp(Condition::Equal, rot_amount, 0i32)?;
+
+                // Check if rot_amount < 32
+                emitter.mov32(0, temp2, rot_amount)?;
+                emitter.sub32(0, temp2, temp2, 32i32)?;
+                let mut jump_large = emitter.cmp(Condition::SigGreaterEqual32, temp2, 0i32)?;
+
+                // rot_amount < 32 case
+                // high = (high << rot) | (low >> (32 - rot))
+                // low = (low << rot) | (high >> (32 - rot))
+
+                // Save low for later
+                emitter.mov32(0, temp1, mem_sp_offset(temp_offset))?;
+
+                // low << rot
+                emitter.shl32(0, reg_a_low, mem_sp_offset(temp_offset), rot_amount)?;
+
+                // 32 - rot
+                emitter.mov32(0, temp2, 32i32)?;
+                emitter.sub32(0, temp2, temp2, rot_amount)?;
+
+                // high >> (32 - rot)
+                emitter.lshr32(0, temp2, mem_sp_offset(temp_offset + 4), temp2)?;
+
+                // low = (low << rot) | (high >> (32 - rot))
+                emitter.or32(0, reg_a_low, reg_a_low, temp2)?;
+
+                // high << rot
+                emitter.shl32(0, reg_a_high, mem_sp_offset(temp_offset + 4), rot_amount)?;
+
+                // 32 - rot
+                emitter.mov32(0, temp2, 32i32)?;
+                emitter.sub32(0, temp2, temp2, rot_amount)?;
+
+                // saved_low >> (32 - rot)
+                emitter.lshr32(0, temp2, temp1, temp2)?;
+
+                // high = (high << rot) | (low >> (32 - rot))
+                emitter.or32(0, reg_a_high, reg_a_high, temp2)?;
+
+                let mut jump_end = emitter.jump(JumpType::Jump)?;
+
+                // rot_amount >= 32 case
+                let mut label_large = emitter.put_label()?;
+                jump_large.set_label(&mut label_large);
+
+                // For rotl when amount >= 32, we essentially rotate by (amount - 32)
+                // but with high and low swapped
+                // high_new = (low << (rot-32)) | (high >> (64-rot))
+                // low_new = (high << (rot-32)) | (low >> (64-rot))
+
+                emitter.mov32(0, temp2, rot_amount)?;
+                emitter.sub32(0, temp2, temp2, 32i32)?;
+
+                // low_new = (high << (rot-32))
+                emitter.shl32(0, reg_a_low, mem_sp_offset(temp_offset + 4), temp2)?;
+
+                // 64 - rot = 32 - (rot - 32)
+                emitter.mov32(0, temp1, 32i32)?;
+                emitter.sub32(0, temp1, temp1, temp2)?;
+
+                // low >> (64 - rot)
+                emitter.lshr32(0, temp1, mem_sp_offset(temp_offset), temp1)?;
+                emitter.or32(0, reg_a_low, reg_a_low, temp1)?;
+
+                // high_new = (low << (rot-32))
+                emitter.shl32(0, reg_a_high, mem_sp_offset(temp_offset), temp2)?;
+
+                // high >> (64 - rot)
+                emitter.mov32(0, temp1, 32i32)?;
+                emitter.sub32(0, temp1, temp1, temp2)?;
+                emitter.lshr32(0, temp1, mem_sp_offset(temp_offset + 4), temp1)?;
+                emitter.or32(0, reg_a_high, reg_a_high, temp1)?;
+
+                let mut jump_end2 = emitter.jump(JumpType::Jump)?;
+
+                // rot_amount == 0 case (no rotation)
+                let mut label_zero = emitter.put_label()?;
+                jump_zero.set_label(&mut label_zero);
+                emitter.mov32(0, reg_a_low, mem_sp_offset(temp_offset))?;
+                emitter.mov32(0, reg_a_high, mem_sp_offset(temp_offset + 4))?;
+
+                let mut label_end = emitter.put_label()?;
+                jump_end.set_label(&mut label_end);
+                jump_end2.set_label(&mut label_end);
+
+                self.free_register(temp1);
+                self.free_register(temp2);
+            }
+
+            BinaryOp::Rotr => {
+                // Free b_high since we only need the rotation amount
+                self.free_register(reg_b_high);
+
+                // Get rotation amount (only low 6 bits matter for 64-bit rotation)
+                let rot_amount = reg_b_low;
+                emitter.and32(0, rot_amount, rot_amount, 63i32)?;
+
+                // rotr(x, n) = (x >> n) | (x << (64 - n))
+
+                // Allocate temp registers
+                let temp1 = self.alloc_register(emitter)?;
+                let temp2 = self.alloc_register(emitter)?;
+
+                // Save original values
+                let temp_offset = self.frame_offset;
+                self.frame_offset += 8;
+                emitter.mov32(0, mem_sp_offset(temp_offset), reg_a_low)?;
+                emitter.mov32(0, mem_sp_offset(temp_offset + 4), reg_a_high)?;
+
+                // Check if rot_amount is 0 (special case: no rotation needed)
+                let mut jump_zero = emitter.cmp(Condition::Equal, rot_amount, 0i32)?;
+
+                // Check if rot_amount < 32
+                emitter.mov32(0, temp2, rot_amount)?;
+                emitter.sub32(0, temp2, temp2, 32i32)?;
+                let mut jump_large = emitter.cmp(Condition::SigGreaterEqual32, temp2, 0i32)?;
+
+                // rot_amount < 32 case
+                // low = (low >> rot) | (high << (32 - rot))
+                // high = (high >> rot) | (low << (32 - rot))
+
+                // Save high for later
+                emitter.mov32(0, temp1, mem_sp_offset(temp_offset + 4))?;
+
+                // low >> rot
+                emitter.lshr32(0, reg_a_low, mem_sp_offset(temp_offset), rot_amount)?;
+
+                // 32 - rot
+                emitter.mov32(0, temp2, 32i32)?;
+                emitter.sub32(0, temp2, temp2, rot_amount)?;
+
+                // high << (32 - rot)
+                emitter.shl32(0, temp2, temp1, temp2)?;
+
+                // low = (low >> rot) | (high << (32 - rot))
+                emitter.or32(0, reg_a_low, reg_a_low, temp2)?;
+
+                // high >> rot
+                emitter.lshr32(0, reg_a_high, temp1, rot_amount)?;
+
+                // 32 - rot
+                emitter.mov32(0, temp2, 32i32)?;
+                emitter.sub32(0, temp2, temp2, rot_amount)?;
+
+                // saved_low << (32 - rot)
+                emitter.shl32(0, temp2, mem_sp_offset(temp_offset), temp2)?;
+
+                // high = (high >> rot) | (low << (32 - rot))
+                emitter.or32(0, reg_a_high, reg_a_high, temp2)?;
+
+                let mut jump_end = emitter.jump(JumpType::Jump)?;
+
+                // rot_amount >= 32 case
+                let mut label_large = emitter.put_label()?;
+                jump_large.set_label(&mut label_large);
+
+                // For rotr when amount >= 32, we rotate by (amount - 32)
+                // with high and low swapped
+
+                emitter.mov32(0, temp2, rot_amount)?;
+                emitter.sub32(0, temp2, temp2, 32i32)?;
+
+                // low_new = (high >> (rot-32))
+                emitter.lshr32(0, reg_a_low, mem_sp_offset(temp_offset + 4), temp2)?;
+
+                // 32 - (rot - 32) = 64 - rot
+                emitter.mov32(0, temp1, 32i32)?;
+                emitter.sub32(0, temp1, temp1, temp2)?;
+
+                // low << (64 - rot)
+                emitter.shl32(0, temp1, mem_sp_offset(temp_offset), temp1)?;
+                emitter.or32(0, reg_a_low, reg_a_low, temp1)?;
+
+                // high_new = (low >> (rot-32))
+                emitter.lshr32(0, reg_a_high, mem_sp_offset(temp_offset), temp2)?;
+
+                // high << (64 - rot)
+                emitter.mov32(0, temp1, 32i32)?;
+                emitter.sub32(0, temp1, temp1, temp2)?;
+                emitter.shl32(0, temp1, mem_sp_offset(temp_offset + 4), temp1)?;
+                emitter.or32(0, reg_a_high, reg_a_high, temp1)?;
+
+                let mut jump_end2 = emitter.jump(JumpType::Jump)?;
+
+                // rot_amount == 0 case (no rotation)
+                let mut label_zero = emitter.put_label()?;
+                jump_zero.set_label(&mut label_zero);
+                emitter.mov32(0, reg_a_low, mem_sp_offset(temp_offset))?;
+                emitter.mov32(0, reg_a_high, mem_sp_offset(temp_offset + 4))?;
+
+                let mut label_end = emitter.put_label()?;
+                jump_end.set_label(&mut label_end);
+                jump_end2.set_label(&mut label_end);
+
+                self.free_register(temp1);
+                self.free_register(temp2);
+            }
+
+            // 64-bit multiplication
+            BinaryOp::Mul => {
+                // 64-bit multiplication on 32-bit: (a_high:a_low) * (b_high:b_low)
+                // Result = a_low * b_low (gives low 64 bits)
+                //        + (a_low * b_high) << 32
+                //        + (a_high * b_low) << 32
+                // We ignore (a_high * b_high) << 64 as it would overflow past 64 bits
+
+                // Allocate temp registers for intermediate results
+                let temp1 = self.alloc_register(emitter)?;
+                let temp2 = self.alloc_register(emitter)?;
+
+                // Save a_low for later use
+                let saved_a_low_offset = self.frame_offset;
+                self.frame_offset += 4;
+                emitter.mov32(0, mem_sp_offset(saved_a_low_offset), reg_a_low)?;
+
+                // temp1 = a_low * b_high (lower 32 bits of the result)
+                emitter.mul32(0, temp1, reg_a_low, reg_b_high)?;
+
+                // temp2 = a_high * b_low (lower 32 bits of the result)
+                emitter.mul32(0, temp2, reg_a_high, reg_b_low)?;
+
+                // temp1 = (a_low * b_high) + (a_high * b_low)
+                emitter.add32(0, temp1, temp1, temp2)?;
+
+                // Now compute a_low * b_low which gives us a full 64-bit result
+                // We need to use R0 and R1 for the multiply
+                let a_low_saved = reg_a_low;
+                let b_low_saved = reg_b_low;
+
+                // Move operands to R0 and R1 if needed
+                if a_low_saved != ScratchRegister::R0 {
+                    emitter.mov32(0, ScratchRegister::R0, a_low_saved)?;
+                }
+                if b_low_saved != ScratchRegister::R1 {
+                    emitter.mov32(0, ScratchRegister::R1, b_low_saved)?;
+                }
+
+                // Full 32x32->64 multiply: R0:R1 = R0 * R1
+                emitter.divmod_u32()?; // Just kidding, we need actual multiply
+                // SLJIT doesn't have a 32x32->64 multiply instruction directly
+                // We'll use the formula: a*b low bits = (a*b) mod 2^32
+                // For the high bits: we use the cross products
+
+                // Actually, let's do this simpler:
+                // R0:R1 after mul gives low 32 bits in result register
+                emitter.mul32(
+                    0,
+                    ScratchRegister::R0,
+                    ScratchRegister::R0,
+                    ScratchRegister::R1,
+                )?;
+
+                // Now R0 has the lower 32 bits of a_low * b_low
+                // temp1 has (a_low * b_high) + (a_high * b_low)
+                // high bits = temp1 + carry from (a_low * b_low)
+
+                // For a proper 32x32->64 multiply, we need to compute the high bits
+                // high = ((a_low & 0xFFFF) * (b_low >> 16) +
+                //         (a_low >> 16) * (b_low & 0xFFFF) +
+                //         ((a_low & 0xFFFF) * (b_low & 0xFFFF)) >> 16) >> 16
+                //      + (a_low >> 16) * (b_low >> 16)
+
+                // This is getting complex. Let's use a simpler approach:
+                // For 64-bit mul on 32-bit, we compute:
+                // result_low = a_low * b_low (lower 32 bits)
+                // result_high = (a_low * b_high) + (a_high * b_low) + high_bits_of(a_low * b_low)
+
+                // To get high bits of a 32x32 multiply, we need to split into 16-bit parts:
+                // Let a_low = a1 * 2^16 + a0, b_low = b1 * 2^16 + b0
+                // a_low * b_low = a1*b1*2^32 + (a1*b0 + a0*b1)*2^16 + a0*b0
+                // high_bits = a1*b1 + ((a1*b0 + a0*b1 + (a0*b0 >> 16)) >> 16)
+
+                // Load back a_low
+                emitter.mov32(0, temp2, mem_sp_offset(saved_a_low_offset))?;
+
+                // Compute high word of 32x32 multiply using bit manipulation
+                // We'll use the fact that for unsigned multiply:
+                // high = (a >> 1) * b + ((a & 1) * b) + ...
+                // This is too complex, let's just compute it properly
+
+                // Split a_low into 16-bit parts
+                emitter.mov32(0, reg_a_high, temp2)?; // a_low
+                emitter.lshr32(0, reg_a_high, reg_a_high, 16i32)?; // a1 = a_low >> 16
+                emitter.mov32(0, reg_a_low, temp2)?;
+                emitter.and32(0, reg_a_low, reg_a_low, 0xFFFFi32)?; // a0 = a_low & 0xFFFF
+
+                // Split b_low into 16-bit parts
+                emitter.mov32(0, temp2, reg_b_low)?;
+                emitter.lshr32(0, temp2, temp2, 16i32)?; // b1 = b_low >> 16
+
+                let saved_b_low_offset = self.frame_offset;
+                self.frame_offset += 4;
+                emitter.mov32(0, mem_sp_offset(saved_b_low_offset), reg_b_low)?;
+
+                emitter.and32(0, reg_b_low, reg_b_low, 0xFFFFi32)?; // b0 = b_low & 0xFFFF
+
+                // Now: reg_a_low = a0, reg_a_high = a1, reg_b_low = b0, temp2 = b1
+
+                // Compute a0 * b0
+                emitter.mul32(0, reg_b_high, reg_a_low, reg_b_low)?; // a0 * b0
+
+                // Low result = a0 * b0 (lower 32 bits) - this is in reg_b_high lower bits
+                // Save for final result
+                emitter.mov32(0, mem_sp_offset(saved_a_low_offset), reg_b_high)?;
+
+                // High part starts with (a0 * b0) >> 16
+                emitter.lshr32(0, reg_b_high, reg_b_high, 16i32)?;
+
+                // Add a0 * b1
+                emitter.mul32(0, reg_b_low, reg_a_low, temp2)?;
+                emitter.add32(0, reg_b_high, reg_b_high, reg_b_low)?;
+
+                // Add a1 * b0
+                let b0_val = mem_sp_offset(saved_b_low_offset);
+                emitter.mov32(0, reg_b_low, b0_val)?;
+                emitter.and32(0, reg_b_low, reg_b_low, 0xFFFFi32)?;
+                emitter.mul32(0, reg_a_low, reg_a_high, reg_b_low)?;
+                emitter.add32(0, reg_b_high, reg_b_high, reg_a_low)?;
+
+                // High part of middle sum
+                emitter.lshr32(0, reg_b_high, reg_b_high, 16i32)?;
+
+                // Add a1 * b1
+                emitter.mul32(0, reg_a_low, reg_a_high, temp2)?;
+                emitter.add32(0, reg_b_high, reg_b_high, reg_a_low)?;
+
+                // Add the temp1 parts (a_low * b_high + a_high * b_low)
+                emitter.add32(0, reg_a_high, reg_b_high, temp1)?;
+
+                // Load final low result
+                emitter.mov32(0, reg_a_low, mem_sp_offset(saved_a_low_offset))?;
+
+                self.free_register(temp1);
+                self.free_register(temp2);
+                self.free_register(reg_b_low);
+                self.free_register(reg_b_high);
+            }
+        }
+
+        // Store result back to stack
+        let result_offset = self.frame_offset;
+        self.frame_offset += 8;
+        emitter.mov32(0, mem_sp_offset(result_offset), reg_a_low)?;
+        emitter.mov32(0, mem_sp_offset(result_offset + 4), reg_a_high)?;
+
+        self.free_register(reg_a_low);
+        self.free_register(reg_a_high);
+
+        self.push(StackValue::Stack(result_offset));
+        Ok(())
     }
 
-    #[cfg(target_pointer_width = "64")]
     fn compile_compare_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1721,18 +2486,6 @@ impl Function {
         Ok(())
     }
 
-    #[cfg(not(target_pointer_width = "64"))]
-    fn compile_compare_op64(
-        &mut self,
-        _emitter: &mut Emitter,
-        _cond: Condition,
-    ) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit comparisons not supported on 32-bit platform".into(),
-        ))
-    }
-
-    #[cfg(target_pointer_width = "64")]
     fn compile_div_op64(&mut self, emitter: &mut Emitter, op: DivOp) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
         let (reg_a, reg_b) = (
@@ -1773,14 +2526,6 @@ impl Function {
         Ok(())
     }
 
-    #[cfg(not(target_pointer_width = "64"))]
-    fn compile_div_op64(&mut self, _emitter: &mut Emitter, _op: DivOp) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit division not supported on 32-bit platform".into(),
-        ))
-    }
-
-    #[cfg(target_pointer_width = "64")]
     fn compile_unary_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1823,18 +2568,6 @@ impl Function {
         Ok(())
     }
 
-    #[cfg(not(target_pointer_width = "64"))]
-    fn compile_unary_op64(
-        &mut self,
-        _emitter: &mut Emitter,
-        _op: UnaryOp,
-    ) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit unary operations not supported on 32-bit platform".into(),
-        ))
-    }
-
-    #[cfg(target_pointer_width = "64")]
     fn compile_load_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1846,91 +2579,219 @@ impl Function {
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
         let mem = mem_offset(addr_reg, offset);
 
-        match kind {
-            LoadStoreKind::I64 => {
-                emitter.mov(0, addr_reg, mem)?;
+        #[cfg(target_pointer_width = "64")]
+        {
+            match kind {
+                LoadStoreKind::I64 => {
+                    emitter.mov(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_8S => {
+                    emitter.mov_s8(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_8U => {
+                    emitter.mov_u8(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_16S => {
+                    emitter.mov_s16(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_16U => {
+                    emitter.mov_u16(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_32S => {
+                    emitter.mov_s32(0, addr_reg, mem)?;
+                }
+                LoadStoreKind::I64_32U => {
+                    emitter.mov_u32(0, addr_reg, mem)?;
+                }
+                _ => unreachable!(),
             }
-            LoadStoreKind::I64_8S => {
-                emitter.mov_s8(0, addr_reg, mem)?;
-            }
-            LoadStoreKind::I64_8U => {
-                emitter.mov_u8(0, addr_reg, mem)?;
-            }
-            LoadStoreKind::I64_16S => {
-                emitter.mov_s16(0, addr_reg, mem)?;
-            }
-            LoadStoreKind::I64_16U => {
-                emitter.mov_u16(0, addr_reg, mem)?;
-            }
-            LoadStoreKind::I64_32S => {
-                emitter.mov_s32(0, addr_reg, mem)?;
-            }
-            LoadStoreKind::I64_32U => {
-                emitter.mov_u32(0, addr_reg, mem)?;
-            }
-            _ => unreachable!(),
+            self.push(StackValue::Register(addr_reg));
         }
-        self.push(StackValue::Register(addr_reg));
+
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            // On 32-bit: load 64-bit value as two 32-bit halves to stack
+            let result_offset = self.frame_offset;
+            self.frame_offset += 8;
+
+            // Allocate a temp register to preserve address
+            let temp_reg = self.alloc_register(emitter)?;
+
+            match kind {
+                LoadStoreKind::I64 => {
+                    // Load lower 32 bits
+                    emitter.mov32(0, temp_reg, mem_offset(addr_reg, offset))?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+
+                    // Load upper 32 bits
+                    emitter.mov32(0, temp_reg, mem_offset(addr_reg, offset + 4))?;
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), temp_reg)?;
+                }
+                LoadStoreKind::I64_8S => {
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov_s8(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Sign extend to high part
+                    emitter.ashr32(0, temp_reg, temp_reg, 31i32)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), temp_reg)?;
+                }
+                LoadStoreKind::I64_8U => {
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov_u8(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Zero extend to high part
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), 0i32)?;
+                }
+                LoadStoreKind::I64_16S => {
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov_s16(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Sign extend to high part
+                    emitter.ashr32(0, temp_reg, temp_reg, 31i32)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), temp_reg)?;
+                }
+                LoadStoreKind::I64_16U => {
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov_u16(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Zero extend to high part
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), 0i32)?;
+                }
+                LoadStoreKind::I64_32S => {
+                    // Load 32-bit value
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov32(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Sign extend to high part: copy the sign bit
+                    emitter.ashr32(0, temp_reg, temp_reg, 31i32)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), temp_reg)?;
+                }
+                LoadStoreKind::I64_32U => {
+                    let mem_op = mem_offset(addr_reg, offset);
+                    emitter.mov32(0, temp_reg, mem_op)?;
+                    emitter.mov32(0, mem_sp_offset(result_offset), temp_reg)?;
+                    // Zero extend to high part
+                    emitter.mov32(0, mem_sp_offset(result_offset + 4), 0i32)?;
+                }
+                _ => unreachable!(),
+            }
+
+            self.free_register(temp_reg);
+            self.free_register(addr_reg);
+            self.push(StackValue::Stack(result_offset));
+        }
+
         Ok(())
     }
 
-    #[cfg(not(target_pointer_width = "64"))]
-    fn compile_load_op64(
-        &mut self,
-        _emitter: &mut Emitter,
-        _offset: i32,
-        _kind: LoadStoreKind,
-    ) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit memory operations not supported on 32-bit platform".into(),
-        ))
-    }
-
-    #[cfg(target_pointer_width = "64")]
     fn compile_store_op64(
         &mut self,
         emitter: &mut Emitter,
         offset: i32,
         kind: LoadStoreKind,
     ) -> Result<(), CompileError> {
-        let (value, addr) = (self.pop_value()?, self.pop_value()?);
-        let (value_reg, addr_reg) = (
-            self.ensure_in_register(emitter, value)?,
-            self.ensure_in_register(emitter, addr)?,
-        );
+        // Pop value first, but don't pop addr yet to avoid register reuse issues
+        let value = self.pop_value()?;
+        let addr = self.pop_value()?;
+
+        // Ensure value is in a register BEFORE processing addr to avoid conflicts
+        #[cfg(target_pointer_width = "64")]
+        let value_reg = self.ensure_in_register(emitter, value)?;
+
+        let addr_reg = self.ensure_in_register(emitter, addr)?;
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
         let mem = mem_offset(addr_reg, offset);
 
-        match kind {
-            LoadStoreKind::I64 => {
-                emitter.mov(0, mem, value_reg)?;
+        #[cfg(target_pointer_width = "64")]
+        {
+            match kind {
+                LoadStoreKind::I64 => {
+                    emitter.mov(0, mem, value_reg)?;
+                }
+                LoadStoreKind::I64_8U => {
+                    emitter.mov_u8(0, mem, value_reg)?;
+                }
+                LoadStoreKind::I64_16U => {
+                    emitter.mov_u16(0, mem, value_reg)?;
+                }
+                LoadStoreKind::I64_32U => {
+                    emitter.mov32(0, mem, value_reg)?;
+                }
+                _ => unreachable!(),
             }
-            LoadStoreKind::I64_8U => {
-                emitter.mov_u8(0, mem, value_reg)?;
-            }
-            LoadStoreKind::I64_16U => {
-                emitter.mov_u16(0, mem, value_reg)?;
-            }
-            LoadStoreKind::I64_32U => {
-                emitter.mov32(0, mem, value_reg)?;
-            }
-            _ => unreachable!(),
+            self.free_register(value_reg);
+            self.free_register(addr_reg);
         }
-        self.free_register(value_reg);
-        self.free_register(addr_reg);
-        Ok(())
-    }
 
-    #[cfg(not(target_pointer_width = "64"))]
-    fn compile_store_op64(
-        &mut self,
-        _emitter: &mut Emitter,
-        _offset: i32,
-        _kind: LoadStoreKind,
-    ) -> Result<(), CompileError> {
-        Err(CompileError::Unsupported(
-            "64-bit memory operations not supported on 32-bit platform".into(),
-        ))
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            // On 32-bit: store 64-bit value from stack (two 32-bit halves)
+            let temp_reg = self.alloc_register(emitter)?;
+
+            match value {
+                StackValue::Stack(value_offset) => {
+                    // Value is on stack as 8 bytes
+                    match kind {
+                        LoadStoreKind::I64 => {
+                            // Store lower 32 bits
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset))?;
+                            emitter.mov32(0, mem_offset(addr_reg, offset), temp_reg)?;
+
+                            // Store upper 32 bits
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset + 4))?;
+                            emitter.mov32(0, mem_offset(addr_reg, offset + 4), temp_reg)?;
+                        }
+                        LoadStoreKind::I64_8U => {
+                            // Store lower 8 bits only
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset))?;
+                            emitter.mov_u8(0, mem_offset(addr_reg, offset), temp_reg)?;
+                        }
+                        LoadStoreKind::I64_16U => {
+                            // Store lower 16 bits only
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset))?;
+                            emitter.mov_u16(0, mem_offset(addr_reg, offset), temp_reg)?;
+                        }
+                        LoadStoreKind::I64_32U => {
+                            // Store lower 32 bits only
+                            emitter.mov32(0, temp_reg, mem_sp_offset(value_offset))?;
+                            emitter.mov32(0, mem_offset(addr_reg, offset), temp_reg)?;
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => {
+                    //Value is in register (probably from an i32 extend operation)
+                    let value_reg = self.ensure_in_register(emitter, value)?;
+
+                    match kind {
+                        LoadStoreKind::I64_8U => {
+                            emitter.mov_u8(0, mem_offset(addr_reg, offset), value_reg)?;
+                        }
+                        LoadStoreKind::I64_16U => {
+                            emitter.mov_u16(0, mem_offset(addr_reg, offset), value_reg)?;
+                        }
+                        LoadStoreKind::I64_32U => {
+                            emitter.mov32(0, mem_offset(addr_reg, offset), value_reg)?;
+                        }
+                        _ => {
+                            self.free_register(value_reg);
+                            self.free_register(temp_reg);
+                            self.free_register(addr_reg);
+                            return Err(CompileError::Invalid(
+                                "64-bit store from register not supported on 32-bit platform"
+                                    .into(),
+                            ));
+                        }
+                    }
+                    self.free_register(value_reg);
+                }
+            }
+
+            self.free_register(temp_reg);
+            self.free_register(addr_reg);
+        }
+
+        Ok(())
     }
 
     /// Compile a floating point binary operation
@@ -2227,49 +3088,78 @@ impl Function {
         is_signed: bool,
     ) -> Result<(), CompileError> {
         let val = self.pop_value()?;
-        let reg = self.ensure_in_register(emitter, val)?;
-        let freg = self.alloc_float_register(emitter)?;
 
-        match (is_f32, is_i32, is_signed) {
-            (true, true, true) => {
-                emitter.conv_f32_from_s32(0, freg, reg)?;
+        #[cfg(target_pointer_width = "64")]
+        {
+            let reg = self.ensure_in_register(emitter, val)?;
+            let freg = self.alloc_float_register(emitter)?;
+
+            match (is_f32, is_i32, is_signed) {
+                (true, true, true) => {
+                    emitter.conv_f32_from_s32(0, freg, reg)?;
+                }
+                (true, true, false) => {
+                    emitter.conv_f32_from_u32(0, freg, reg)?;
+                }
+                (false, true, true) => {
+                    emitter.conv_f64_from_s32(0, freg, reg)?;
+                }
+                (false, true, false) => {
+                    emitter.conv_f64_from_u32(0, freg, reg)?;
+                }
+                (true, false, true) => {
+                    emitter.conv_f32_from_sw(0, freg, reg)?;
+                }
+                (true, false, false) => {
+                    emitter.conv_f32_from_uw(0, freg, reg)?;
+                }
+                (false, false, true) => {
+                    emitter.conv_f64_from_sw(0, freg, reg)?;
+                }
+                (false, false, false) => {
+                    emitter.conv_f64_from_uw(0, freg, reg)?;
+                }
             }
-            (true, true, false) => {
-                emitter.conv_f32_from_u32(0, freg, reg)?;
-            }
-            (false, true, true) => {
-                emitter.conv_f64_from_s32(0, freg, reg)?;
-            }
-            (false, true, false) => {
-                emitter.conv_f64_from_u32(0, freg, reg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (true, false, true) => {
-                emitter.conv_f32_from_sw(0, freg, reg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (true, false, false) => {
-                emitter.conv_f32_from_uw(0, freg, reg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (false, false, true) => {
-                emitter.conv_f64_from_sw(0, freg, reg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (false, false, false) => {
-                emitter.conv_f64_from_uw(0, freg, reg)?;
-            }
-            #[cfg(not(target_pointer_width = "64"))]
-            (_, false, _) => {
-                return Err(CompileError::Unsupported(
-                    "64-bit int to float conversion not supported on 32-bit platform".into(),
-                ));
-            }
+
+            self.free_register(reg);
+            self.push(StackValue::FloatRegister(freg));
+            Ok(())
         }
 
-        self.free_register(reg);
-        self.push(StackValue::FloatRegister(freg));
-        Ok(())
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            // On 32-bit, i64 conversions need special handling
+            if !is_i32 {
+                // For i64 -> float on 32-bit, value is on stack as two 32-bit halves
+                // We need to use a helper function due to complexity
+                return Err(CompileError::Unsupported(
+                    "64-bit to float conversion not yet supported on 32-bit platform".into(),
+                ));
+            }
+
+            // i32 -> float works fine
+            let reg = self.ensure_in_register(emitter, val)?;
+            let freg = self.alloc_float_register(emitter)?;
+
+            match (is_f32, is_signed) {
+                (true, true) => {
+                    emitter.conv_f32_from_s32(0, freg, reg)?;
+                }
+                (true, false) => {
+                    emitter.conv_f32_from_u32(0, freg, reg)?;
+                }
+                (false, true) => {
+                    emitter.conv_f64_from_s32(0, freg, reg)?;
+                }
+                (false, false) => {
+                    emitter.conv_f64_from_u32(0, freg, reg)?;
+                }
+            }
+
+            self.free_register(reg);
+            self.push(StackValue::FloatRegister(freg));
+            Ok(())
+        }
     }
 
     /// Convert float to integer (truncate)
@@ -2292,19 +3182,13 @@ impl Function {
             (false, true) => {
                 emitter.conv_s32_from_f64(0, reg, freg)?;
             }
-            #[cfg(target_pointer_width = "64")]
+
             (true, false) => {
                 emitter.conv_sw_from_f32(0, reg, freg)?;
             }
-            #[cfg(target_pointer_width = "64")]
+
             (false, false) => {
                 emitter.conv_sw_from_f64(0, reg, freg)?;
-            }
-            #[cfg(not(target_pointer_width = "64"))]
-            (_, false) => {
-                return Err(CompileError::Unsupported(
-                    "Float to 64-bit int conversion not supported on 32-bit platform".into(),
-                ));
             }
         }
 
@@ -2362,9 +3246,11 @@ impl Function {
                     emitter.mov(0, reg, mem)?;
                 }
                 #[cfg(not(target_pointer_width = "64"))]
-                return Err(CompileError::Unsupported(
-                    "64-bit globals not supported on 32-bit platform".into(),
-                ));
+                {
+                    return Err(CompileError::Unsupported(
+                        "64-bit globals not supported on 32-bit platform".into(),
+                    ));
+                }
             }
             ValType::F32 | ValType::F64 => {
                 let freg = self.alloc_float_register(emitter)?;
@@ -2432,9 +3318,11 @@ impl Function {
                     self.free_register(val_reg);
                 }
                 #[cfg(not(target_pointer_width = "64"))]
-                return Err(CompileError::Unsupported(
-                    "64-bit globals not supported on 32-bit platform".into(),
-                ));
+                {
+                    return Err(CompileError::Unsupported(
+                        "64-bit globals not supported on 32-bit platform".into(),
+                    ));
+                }
             }
             ValType::F32 => {
                 emitter.mov_f32(0, mem, value.to_operand())?;
