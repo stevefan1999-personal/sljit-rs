@@ -768,6 +768,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-bf"
+version = "0.1.0"
+dependencies = [
+ "sljit",
+]
+
+[[package]]
 name = "example-simple"
 version = "0.1.0"
 dependencies = [
