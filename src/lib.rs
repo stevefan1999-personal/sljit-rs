@@ -1,3 +1,8 @@
+#![cfg_attr(not(test), no_std)]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
 pub use sljit_sys as sys;
 
 use sljit_sys::{Compiler, ErrorCode, Jump, Label, sljit_sw};
@@ -666,12 +671,14 @@ pub struct LoopContext<'a> {
 }
 
 impl<'a> LoopContext<'a> {
+    #[inline(always)]
     pub fn break_(&mut self) -> Result<(), ErrorCode> {
         self.break_jumps.push(self.emitter.jump(JumpType::Jump)?);
         Ok(())
     }
 
     /// Break out of the loop if the comparison condition is true.
+    #[inline(always)]
     pub fn break_on_cmp(
         &mut self,
         type_: Condition,
@@ -682,6 +689,7 @@ impl<'a> LoopContext<'a> {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn continue_(&mut self) -> Result<(), ErrorCode> {
         self.emitter
             .jump(JumpType::Jump)?
@@ -689,6 +697,7 @@ impl<'a> LoopContext<'a> {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn continue_on_cmp(
         &mut self,
         type_: Condition,
@@ -709,6 +718,7 @@ pub struct Emitter<'a> {
 
 impl<'a> Emitter<'a> {
     /// Creates a new emitter.
+    #[inline(always)]
     pub fn new(compiler: &'a mut Compiler) -> Self {
         Self { compiler }
     }
@@ -997,6 +1007,7 @@ impl<'a> Emitter<'a> {
     /// // No local stack frame is allocated.
     /// emitter.emit_enter(0, arg_types!(W, W, W, W), regs!(1), regs!(3), 0);
     /// ```
+    #[inline(always)]
     pub fn emit_enter(
         &mut self,
         options: i32,
@@ -1028,6 +1039,7 @@ impl<'a> Emitter<'a> {
     /// let mut label = emitter.put_label().unwrap();
     /// jump.set_label(&mut label);
     /// ```
+    #[inline(always)]
     pub fn jump(&mut self, type_: JumpType) -> Result<sys::Jump, ErrorCode> {
         Ok(self.compiler.emit_jump(type_ as i32))
     }
@@ -1047,6 +1059,7 @@ impl<'a> Emitter<'a> {
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut call = emitter.call(JumpType::Call, arg_types!(W, W)).unwrap();
     /// ```
+    #[inline(always)]
     pub fn call(&mut self, type_: JumpType, arg_types: i32) -> Result<sys::Jump, ErrorCode> {
         Ok(self.compiler.emit_call(type_ as i32, arg_types))
     }
@@ -1069,6 +1082,7 @@ impl<'a> Emitter<'a> {
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut jump = emitter.cmp(Condition::Equal, R0, 5).unwrap();
     /// ```
+    #[inline(always)]
     pub fn cmp(
         &mut self,
         type_: Condition,
@@ -1100,6 +1114,7 @@ impl<'a> Emitter<'a> {
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut jump = emitter.fcmp(Condition::FEqual, FR0, 5.0f64).unwrap();
     /// ```
+    #[inline(always)]
     pub fn fcmp(
         &mut self,
         type_: Condition,
@@ -1119,6 +1134,7 @@ impl<'a> Emitter<'a> {
     ///
     /// * `type_` - The type of the jump.
     /// * `src` - The source operand.
+    #[inline(always)]
     pub fn ijump(&mut self, type_: i32, src: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_ijump(type_, src, srcw)?;
@@ -1132,6 +1148,7 @@ impl<'a> Emitter<'a> {
     /// * `type_` - The type of the call.
     /// * `arg_types` - A bitmask of argument types.
     /// * `src` - The source operand.
+    #[inline(always)]
     pub fn icall(
         &mut self,
         type_: i32,
@@ -1150,6 +1167,7 @@ impl<'a> Emitter<'a> {
     /// * `op` - The operation.
     /// * `dst` - The destination operand.
     /// * `type_` - The type of the operation.
+    #[inline(always)]
     pub fn op_flags(
         &mut self,
         op: i32,
@@ -1170,6 +1188,7 @@ impl<'a> Emitter<'a> {
     /// * `dst_reg` - The destination register.
     /// * `src1` - The first source operand.
     /// * `src2_reg` - The second source register.
+    #[inline(always)]
     pub fn select(
         &mut self,
         type_: Condition,
@@ -1194,6 +1213,7 @@ impl<'a> Emitter<'a> {
     /// * `dst_freg` - The destination float register.
     /// * `src1` - The first source operand.
     /// * `src2_freg` - The second source float register.
+    #[inline(always)]
     pub fn fselect(
         &mut self,
         type_: Condition,
@@ -1218,6 +1238,7 @@ impl<'a> Emitter<'a> {
     /// * `src2` - The second source operand.
     /// * `then_branch` - The closure to execute if the condition is true.
     /// * `else_branch` - The closure to execute if the condition is false.
+    #[inline(always)]
     pub fn branch<T, E>(
         &mut self,
         type_: Condition,
@@ -1244,6 +1265,7 @@ impl<'a> Emitter<'a> {
     /// Internal helper for all loop constructs.
     ///
     /// This handles the common pattern of: put label, pre-check, execute body, back jump, finalize.
+    #[inline(always)]
     fn loop_impl<F, Pre, Back>(
         &mut self,
         pre_check: Pre,
@@ -1280,6 +1302,7 @@ impl<'a> Emitter<'a> {
         Ok(self)
     }
 
+    #[inline(always)]
     pub fn while_<F>(
         &mut self,
         type_: Condition,
@@ -1305,6 +1328,7 @@ impl<'a> Emitter<'a> {
     /// * `type_` - The type of the comparison (loop continues while condition is true).
     /// * `src1` - The first source operand.
     /// * `src2` - The second source operand.
+    #[inline(always)]
     pub fn do_while_<F>(
         &mut self,
         body: F,
@@ -1318,6 +1342,7 @@ impl<'a> Emitter<'a> {
         self.loop_impl(|_| Ok(None), body, |em| em.cmp(type_, src1, src2))
     }
 
+    #[inline(always)]
     pub fn loop_<F>(&mut self, body: F) -> Result<&mut Self, ErrorCode>
     where
         F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
@@ -1332,6 +1357,7 @@ impl<'a> Emitter<'a> {
     /// * `op` - The operation.
     /// * `dst` - The destination operand.
     /// * `init_value` - The initial value.
+    #[inline(always)]
     pub fn const_(
         &mut self,
         op: i32,
@@ -1343,11 +1369,13 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits a `LABEL` instruction.
+    #[inline(always)]
     pub fn put_label(&mut self) -> Result<sys::Label, ErrorCode> {
         Ok(self.compiler.emit_label())
     }
 
     /// Emits a `LABEL` instruction.
+    #[inline(always)]
     pub fn put_label_and_fill(
         &mut self,
         fill_fn: impl FnOnce(&mut Emitter) -> Result<(), ErrorCode>,
@@ -1363,6 +1391,7 @@ impl<'a> Emitter<'a> {
     ///
     /// * `op` - The operation.
     /// * `src` - The source operand.
+    #[inline(always)]
     pub fn emit_return(&mut self, op: ReturnOp, src: impl Into<Operand>) -> Result<(), ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_return(op as i32, src, srcw)?;
@@ -1370,6 +1399,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits a `RETURN` instruction with no return value.
+    #[inline(always)]
     pub fn return_void(&mut self) -> Result<(), ErrorCode> {
         self.compiler.emit_return_void()?;
         Ok(())
@@ -1381,6 +1411,7 @@ impl<'a> Emitter<'a> {
     /// # Parameters
     ///
     /// * `src` - The source operand.
+    #[inline(always)]
     pub fn return_to(&mut self, src: impl Into<Operand>) -> Result<(), ErrorCode> {
         let (src, srcw) = src.into().into();
         self.compiler.emit_return_to(src, srcw)?;
@@ -1393,6 +1424,7 @@ impl<'a> Emitter<'a> {
     ///
     /// * `dst` - The destination operand.
     /// * `offset` - The offset from the local base.
+    #[inline(always)]
     pub fn get_local_base(
         &mut self,
         dst: impl Into<Operand>,
