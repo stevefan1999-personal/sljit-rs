@@ -1,4 +1,6 @@
-use sljit_sys::{self as sys, Compiler, ErrorCode, Jump, Label, sljit_sw};
+pub use sljit_sys as sys;
+
+use sljit_sys::{Compiler, ErrorCode, Jump, Label, sljit_sw};
 
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
@@ -657,14 +659,37 @@ pub struct LoopContext<'a> {
 
 impl<'a> LoopContext<'a> {
     pub fn break_(&mut self) -> Result<(), ErrorCode> {
-        let jump = self.emitter.jump(JumpType::Jump)?;
-        self.break_jumps.push(jump);
+        self.break_jumps.push(self.emitter.jump(JumpType::Jump)?);
+        Ok(())
+    }
+
+    /// Break out of the loop if the comparison condition is true.
+    pub fn break_on_cmp(
+        &mut self,
+        type_: Condition,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<(), ErrorCode> {
+        self.break_jumps.push(self.emitter.cmp(type_, src1, src2)?);
         Ok(())
     }
 
     pub fn continue_(&mut self) -> Result<(), ErrorCode> {
-        let mut jump = self.emitter.jump(JumpType::Jump)?;
-        jump.set_label(&mut self.loop_start);
+        self.emitter
+            .jump(JumpType::Jump)?
+            .set_label(&mut self.loop_start);
+        Ok(())
+    }
+
+    pub fn continue_on_cmp(
+        &mut self,
+        type_: Condition,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<(), ErrorCode> {
+        self.emitter
+            .cmp(type_, src1, src2)?
+            .set_label(&mut self.loop_start);
         Ok(())
     }
 }
@@ -962,7 +987,7 @@ impl<'a> Emitter<'a> {
     /// // Function with 3 arguments of type sljit_sw and 1 return value of type sljit_sw.
     /// // The function uses 1 scratch register and 3 saved registers.
     /// // No local stack frame is allocated.
-    /// emitter.emit_enter(0, args!(W, W, W, W), regs!(1), regs!(3), 0);
+    /// emitter.emit_enter(0, arg_types!(W, W, W, W), regs!(1), regs!(3), 0);
     /// ```
     pub fn emit_enter(
         &mut self,
@@ -1012,7 +1037,7 @@ impl<'a> Emitter<'a> {
     /// # use sljit::{Compiler, Emitter, JumpType, args};
     /// # let mut compiler = Compiler::new().unwrap();
     /// # let mut emitter = Emitter::new(&mut compiler);
-    /// let mut call = emitter.call(JumpType::Call, args!(W, W)).unwrap();
+    /// let mut call = emitter.call(JumpType::Call, arg_types!(W, W)).unwrap();
     /// ```
     pub fn call(&mut self, type_: JumpType, arg_types: i32) -> Result<sys::Jump, ErrorCode> {
         Ok(self.compiler.emit_call(type_ as i32, arg_types))
@@ -1194,8 +1219,8 @@ impl<'a> Emitter<'a> {
         else_branch: E,
     ) -> Result<&mut Self, ErrorCode>
     where
-        T: FnOnce(&mut Emitter) -> Result<(), ErrorCode>,
-        E: FnOnce(&mut Emitter) -> Result<(), ErrorCode>,
+        T: FnOnce(&mut Emitter<'a>) -> Result<(), ErrorCode>,
+        E: FnOnce(&mut Emitter<'a>) -> Result<(), ErrorCode>,
     {
         let mut jump_to_else = self.cmp(type_.invert(), src1, src2)?;
         then_branch(self)?;
@@ -1205,6 +1230,45 @@ impl<'a> Emitter<'a> {
         else_branch(self)?;
         let mut end_label = self.put_label()?;
         jump_to_end.set_label(&mut end_label);
+        Ok(self)
+    }
+
+    /// Internal helper for all loop constructs.
+    ///
+    /// This handles the common pattern of: put label, pre-check, execute body, back jump, finalize.
+    fn loop_impl<F, Pre, Back>(
+        &mut self,
+        pre_check: Pre,
+        body: F,
+        post_check: Back,
+    ) -> Result<&mut Self, ErrorCode>
+    where
+        Pre: FnOnce(&mut Self) -> Result<Option<Jump>, ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        Back: FnOnce(&mut Self) -> Result<Jump, ErrorCode>,
+    {
+        let mut loop_start = self.put_label()?;
+        let pre_jump = pre_check(self)?;
+        let mut ctx = LoopContext {
+            // SAFETY: We create a temporary mutable reference here that we ensure
+            // doesn't escape the function. The borrow checker can't prove this is safe
+            // due to the invariant lifetime in Emitter<'a>, but it's actually safe
+            // because the LoopContext is dropped at the end of this function.
+            emitter: unsafe { &mut *(self as *mut Emitter) },
+            loop_start,
+            break_jumps: Vec::new(),
+        };
+        body(self, &mut ctx)?;
+        if let Ok(mut jump) = post_check(self) {
+            jump.set_label(&mut loop_start);
+        }
+        let mut loop_end = self.put_label()?;
+        for mut break_jump in ctx.break_jumps {
+            break_jump.set_label(&mut loop_end);
+        }
+        if let Some(mut jump) = pre_jump {
+            jump.set_label(&mut loop_end);
+        }
         Ok(self)
     }
 
@@ -1218,74 +1282,39 @@ impl<'a> Emitter<'a> {
     where
         F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
     {
-        let mut loop_start = self.put_label()?;
+        self.loop_impl(
+            |em| Ok(Some(em.cmp(type_.invert(), src1.into(), src2.into())?)),
+            body,
+            |em| em.jump(JumpType::Jump),
+        )
+    }
 
-        // Check condition and jump to end if false
-        let mut jump_to_end = self.cmp(type_.invert(), src1, src2)?;
-
-        // Execute loop body with context
-        {
-            let self_ptr = self as *mut Emitter;
-            let mut ctx = LoopContext {
-                // SAFETY: We create a temporary mutable reference here that we ensure
-                // doesn't escape the block. The borrow checker can't prove this is safe
-                // due to the invariant lifetime in Emitter<'a>, but it's actually safe
-                // because the LoopContext is dropped at the end of this block.
-                emitter: unsafe { &mut *self_ptr },
-                loop_start,
-                break_jumps: Vec::new(),
-            };
-            body(self, &mut ctx)?;
-
-            // Jump back to loop start (continue)
-            let mut jump_to_start = self.jump(JumpType::Jump)?;
-            jump_to_start.set_label(&mut loop_start);
-
-            // Loop end label - wire all break jumps to here
-            let mut loop_end = self.put_label()?;
-            jump_to_end.set_label(&mut loop_end);
-
-            // Wire up any break jumps
-            for mut break_jump in ctx.break_jumps {
-                break_jump.set_label(&mut loop_end);
-            }
-        }
-
-        Ok(self)
+    /// Emits a do-while loop that executes the body first, then checks the condition.
+    ///
+    /// # Parameters
+    ///
+    /// * `body` - The closure to execute for each iteration.
+    /// * `type_` - The type of the comparison (loop continues while condition is true).
+    /// * `src1` - The first source operand.
+    /// * `src2` - The second source operand.
+    pub fn do_while_<F>(
+        &mut self,
+        body: F,
+        type_: Condition,
+        src1: impl Into<Operand> + Copy,
+        src2: impl Into<Operand> + Copy,
+    ) -> Result<&mut Self, ErrorCode>
+    where
+        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+    {
+        self.loop_impl(|_| Ok(None), body, |em| em.cmp(type_, src1, src2))
     }
 
     pub fn loop_<F>(&mut self, body: F) -> Result<&mut Self, ErrorCode>
     where
         F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
     {
-        let mut loop_start = self.put_label()?;
-
-        // Execute loop body with context
-        {
-            let self_ptr = self as *mut Emitter;
-            let mut ctx = LoopContext {
-                // SAFETY: We create a temporary mutable reference here that we ensure
-                // doesn't escape the block. The borrow checker can't prove this is safe
-                // due to the invariant lifetime in Emitter<'a>, but it's actually safe
-                // because the LoopContext is dropped at the end of this block.
-                emitter: unsafe { &mut *self_ptr },
-                loop_start,
-                break_jumps: Vec::new(),
-            };
-            body(self, &mut ctx)?;
-
-            // Jump back to loop start (continue)
-            let mut jump_to_start = self.jump(JumpType::Jump)?;
-            jump_to_start.set_label(&mut loop_start);
-
-            // Loop end label - wire all break jumps to here
-            let mut loop_end = self.put_label()?;
-            for mut break_jump in ctx.break_jumps {
-                break_jump.set_label(&mut loop_end);
-            }
-        }
-
-        Ok(self)
+        self.loop_impl(|_| Ok(None), body, |em| em.jump(JumpType::Jump))
     }
 
     /// Emits a `CONST` instruction.
