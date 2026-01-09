@@ -10,3 +10,6 @@ version.workspace = true
 wasmparser = "0.244.0"
 sljit = { path = ".." }
 indexmap = "2.13.0"
+
+[dev-dependencies]
+crunchy = "0.2.4"

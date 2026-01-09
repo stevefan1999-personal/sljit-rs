@@ -5,6 +5,8 @@
 //!
 //! Inspired by pwart's architecture, but simplified for clarity.
 
+use std::error::Error;
+
 use indexmap::IndexSet;
 use sljit::sys::{
     self, Compiler, GeneratedCode, SLJIT_ARG_TYPE_F32, SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_W,
@@ -14,7 +16,7 @@ use sljit::{
     Condition, Emitter, FloatRegister, JumpType, Operand, ReturnOp, SavedRegister, ScratchRegister,
     mem_offset, mem_sp_offset, regs,
 };
-use wasmparser::{Operator, ValType};
+use wasmparser::{Import, Operator, ValType};
 
 /// Errors that can occur during compilation
 #[derive(Debug)]
@@ -143,6 +145,7 @@ impl StackValue {
 }
 
 /// Information about a control flow block
+#[derive(Clone, Debug, Default)]
 struct Block {
     label: Option<sys::Label>,
     end_jumps: Vec<sys::Jump>,
@@ -208,7 +211,8 @@ pub struct TableEntry {
 }
 
 /// WebAssembly function compiler
-pub struct WasmCompiler {
+#[derive(Clone, Debug)]
+pub struct Function {
     stack: Vec<StackValue>,
     blocks: Vec<Block>,
     locals: Vec<LocalVar>,
@@ -236,7 +240,8 @@ macro_rules! stack_underflow {
     };
 }
 
-impl WasmCompiler {
+impl Function {
+    #[inline]
     pub fn new() -> Self {
         Self {
             stack: vec![],
@@ -264,31 +269,37 @@ impl WasmCompiler {
     }
 
     /// Set globals for the compiler
+    #[inline]
     pub fn set_globals(&mut self, globals: Vec<GlobalInfo>) {
         self.globals = globals;
     }
 
     /// Set memory instance for the compiler
+    #[inline]
     pub fn set_memory(&mut self, memory: MemoryInfo) {
         self.memory = Some(memory);
     }
 
     /// Set function table for direct calls
+    #[inline]
     pub fn set_functions(&mut self, functions: Vec<FunctionEntry>) {
         self.functions = functions;
     }
 
     /// Set tables for indirect calls
+    #[inline]
     pub fn set_tables(&mut self, tables: Vec<TableEntry>) {
         self.tables = tables;
     }
 
     /// Set function types for call_indirect
+    #[inline]
     pub fn set_func_types(&mut self, func_types: Vec<FuncType>) {
         self.func_types = func_types;
     }
 
     /// Pop a value from stack with error handling
+    #[inline]
     fn pop_value(&mut self) -> Result<StackValue, CompileError> {
         let val = self.stack.pop().ok_or_else(|| stack_underflow!())?;
         match &val {
@@ -300,6 +311,7 @@ impl WasmCompiler {
     }
 
     /// Allocate a scratch register, spilling if necessary
+    #[inline]
     fn alloc_register(&mut self, emitter: &mut Emitter) -> Result<ScratchRegister, CompileError> {
         if let Some(reg) = self.free_registers.pop() {
             Ok(reg)
@@ -317,6 +329,7 @@ impl WasmCompiler {
             Err(CompileError::Invalid("No registers available".into()))
         }
     }
+    #[inline]
 
     fn free_register(&mut self, reg: ScratchRegister) {
         if !self.free_registers.contains(&reg) {
@@ -325,6 +338,7 @@ impl WasmCompiler {
     }
 
     /// Allocate a float register, spilling if necessary
+    #[inline]
     fn alloc_float_register(
         &mut self,
         emitter: &mut Emitter,
@@ -346,18 +360,21 @@ impl WasmCompiler {
             Err(CompileError::Invalid("No float registers available".into()))
         }
     }
+    #[inline]
 
     fn free_float_register(&mut self, reg: FloatRegister) {
         if !self.free_float_registers.contains(&reg) {
             self.free_float_registers.insert(reg);
         }
     }
+    #[inline]
 
     fn push(&mut self, value: StackValue) {
         self.stack.push(value);
     }
 
     /// Ensure a stack value is in a register
+    #[inline]
     fn ensure_in_register(
         &mut self,
         emitter: &mut Emitter,
@@ -394,6 +411,7 @@ impl WasmCompiler {
     }
 
     /// Ensure a stack value is in a float register
+    #[inline]
     fn ensure_in_float_register(
         &mut self,
         emitter: &mut Emitter,
@@ -451,6 +469,7 @@ impl WasmCompiler {
     }
 
     /// Emit mov from StackValue to a saved register
+    #[inline]
     fn emit_mov_to_saved(
         &self,
         emitter: &mut Emitter,
@@ -480,6 +499,7 @@ impl WasmCompiler {
     }
 
     /// Emit mov from StackValue to stack offset
+    #[inline]
     fn emit_mov_to_stack_offset(
         &mut self,
         emitter: &mut Emitter,
@@ -506,6 +526,7 @@ impl WasmCompiler {
     }
 
     /// Emit mov to local variable (unified helper for LocalSet/LocalTee)
+    #[inline]
     fn emit_set_local(
         &mut self,
         emitter: &mut Emitter,
@@ -557,6 +578,7 @@ impl WasmCompiler {
     }
 
     /// Save all register values to stack (for control flow)
+    #[inline]
     fn save_all_to_stack(&mut self, emitter: &mut Emitter) -> Result<(), CompileError> {
         for (i, reg) in self
             .stack
@@ -581,6 +603,7 @@ impl WasmCompiler {
     }
 
     /// Create a new block with common initialization
+    #[inline]
     fn new_block(&mut self, label: Option<sys::Label>, has_result: bool) -> Block {
         let result_offset = if has_result {
             let offset = self.frame_offset;
@@ -600,12 +623,13 @@ impl WasmCompiler {
     }
 
     /// Check if block type has a result
-    fn block_has_result(blockty: &wasmparser::BlockType) -> bool {
+    const fn block_has_result(blockty: &wasmparser::BlockType) -> bool {
         matches!(blockty, wasmparser::BlockType::Type(_))
     }
 
     /// Make argument types bitmask for sljit
     /// Supports up to 7 arguments (with 32-bit arg_types bitmask)
+    #[inline]
     fn make_arg_types(params: &[ValType], results: &[ValType]) -> i32 {
         let ret_type = if results.is_empty() {
             sys::SLJIT_ARG_TYPE_RET_VOID
@@ -623,7 +647,7 @@ impl WasmCompiler {
     }
 
     /// Get the stack space needed for extra arguments (arguments beyond the first 3)
-    fn get_extra_arg_stack_size(param_count: usize) -> i32 {
+    const fn get_extra_arg_stack_size(param_count: usize) -> i32 {
         if param_count <= 3 {
             0
         } else {
@@ -636,17 +660,20 @@ impl WasmCompiler {
     }
 
     /// Compile a WebAssembly function
-    pub fn compile_function(
+    #[inline]
+    pub fn compile_function<'a, B>(
         &mut self,
         compiler: &mut Compiler,
         params: &[ValType],
         results: &[ValType],
-        locals: &[(u32, ValType)],
-        body: &[Operator],
-    ) -> Result<(), CompileError> {
+        locals: &[ValType],
+        body: B,
+    ) -> Result<(), CompileError>
+    where
+        B: Iterator<Item = Operator<'a>>,
+    {
         let mut emitter = Emitter::new(compiler);
-        let total_locals: usize =
-            params.len() + locals.iter().map(|(c, _)| *c as usize).sum::<usize>();
+        let total_locals: usize = params.len() + locals.len();
 
         self.param_count = total_locals;
         self.locals.clear();
@@ -666,11 +693,9 @@ impl WasmCompiler {
         }
 
         // Declared locals go on stack
-        for (count, _) in locals {
-            for _ in 0..*count {
-                self.locals.push(LocalVar::Stack(stack_local_offset));
-                stack_local_offset += 8;
-            }
+        for _ in locals {
+            self.locals.push(LocalVar::Stack(stack_local_offset));
+            stack_local_offset += 8;
         }
 
         // Ensure frame_offset is 16-byte aligned for proper float operation alignment
@@ -703,12 +728,13 @@ impl WasmCompiler {
         });
 
         for op in body {
-            self.compile_operator(&mut emitter, op)?;
+            self.compile_operator(&mut emitter, &op)?;
         }
         Ok(())
     }
 
     /// Compile a single WebAssembly operator
+    #[inline]
     fn compile_operator(
         &mut self,
         emitter: &mut Emitter,
@@ -1303,6 +1329,7 @@ impl WasmCompiler {
     }
 
     /// Helper to emit conditional jump (used by If and BrIf)
+    #[inline]
     fn emit_cond_jump(
         &mut self,
         emitter: &mut Emitter,
@@ -1320,6 +1347,7 @@ impl WasmCompiler {
         }
     }
 
+    #[inline]
     fn compile_end(&mut self, emitter: &mut Emitter) -> Result<(), CompileError> {
         if self.blocks.len() == 1 {
             let block = self.blocks.pop().unwrap();
@@ -1365,6 +1393,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_br(
         &mut self,
         emitter: &mut Emitter,
@@ -1393,6 +1422,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_br_if(
         &mut self,
         emitter: &mut Emitter,
@@ -1413,6 +1443,7 @@ impl WasmCompiler {
     }
 
     /// Compile a binary arithmetic operation using functional dispatch
+    #[inline]
     fn compile_binary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1443,6 +1474,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_compare_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1471,6 +1503,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_div_op(&mut self, emitter: &mut Emitter, op: DivOp) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
         let (reg_a, reg_b) = (
@@ -1511,6 +1544,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_unary_op(&mut self, emitter: &mut Emitter, op: UnaryOp) -> Result<(), CompileError> {
         let val = self.pop_value()?;
         let reg = self.ensure_in_register(emitter, val)?;
@@ -1547,6 +1581,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_load_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1591,6 +1626,7 @@ impl WasmCompiler {
         Ok(())
     }
 
+    #[inline]
     fn compile_store_op(
         &mut self,
         emitter: &mut Emitter,
@@ -1635,6 +1671,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_binary_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1666,6 +1703,7 @@ impl WasmCompiler {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
+    #[inline]
     fn compile_binary_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1677,6 +1715,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_compare_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1717,6 +1756,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_div_op64(&mut self, emitter: &mut Emitter, op: DivOp) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
         let (reg_a, reg_b) = (
@@ -1765,6 +1805,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_unary_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1808,6 +1849,7 @@ impl WasmCompiler {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
+    #[inline]
     fn compile_unary_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1819,6 +1861,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_load_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1859,6 +1902,7 @@ impl WasmCompiler {
     }
 
     #[cfg(not(target_pointer_width = "64"))]
+    #[inline]
     fn compile_load_op64(
         &mut self,
         _emitter: &mut Emitter,
@@ -1871,6 +1915,7 @@ impl WasmCompiler {
     }
 
     #[cfg(target_pointer_width = "64")]
+    #[inline]
     fn compile_store_op64(
         &mut self,
         emitter: &mut Emitter,
@@ -1918,6 +1963,7 @@ impl WasmCompiler {
     }
 
     /// Compile a floating point binary operation
+    #[inline]
     fn compile_float_binary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2003,6 +2049,7 @@ impl WasmCompiler {
     }
 
     /// Compile a floating point unary operation
+    #[inline]
     fn compile_float_unary_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2099,6 +2146,7 @@ impl WasmCompiler {
     }
 
     /// Helper to move float register conditionally based on is_f32
+    #[inline]
     fn mov_float(
         emitter: &mut Emitter,
         is_f32: bool,
@@ -2114,6 +2162,7 @@ impl WasmCompiler {
     }
 
     /// Emit a call to a libm function for float binary operations
+    #[inline]
     fn emit_float_binary_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2146,6 +2195,7 @@ impl WasmCompiler {
     }
 
     /// Emit a call to a libm function for float unary operations
+    #[inline]
     fn emit_float_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2174,6 +2224,7 @@ impl WasmCompiler {
     }
 
     /// Compile a floating point comparison operation
+    #[inline]
     fn compile_float_compare_op(
         &mut self,
         emitter: &mut Emitter,
@@ -2203,6 +2254,7 @@ impl WasmCompiler {
     }
 
     /// Convert integer to float
+    #[inline]
     fn compile_convert_int_to_float(
         &mut self,
         emitter: &mut Emitter,
@@ -2257,6 +2309,7 @@ impl WasmCompiler {
     }
 
     /// Convert float to integer (truncate)
+    #[inline]
     fn compile_convert_float_to_int(
         &mut self,
         emitter: &mut Emitter,
@@ -2298,6 +2351,7 @@ impl WasmCompiler {
     }
 
     /// Compile f32.demote_f64 or f64.promote_f32
+    #[inline]
     fn compile_float_demote_promote(
         &mut self,
         emitter: &mut Emitter,
@@ -2315,6 +2369,7 @@ impl WasmCompiler {
     }
 
     /// Compile global.get - load a global variable value
+    #[inline]
     fn compile_global_get(
         &mut self,
         emitter: &mut Emitter,
@@ -2373,6 +2428,7 @@ impl WasmCompiler {
     }
 
     /// Compile global.set - store a value to a global variable
+    #[inline]
     fn compile_global_set(
         &mut self,
         emitter: &mut Emitter,
@@ -2438,6 +2494,7 @@ impl WasmCompiler {
     }
 
     /// Compile memory.size - return current memory size in pages
+    #[inline]
     fn compile_memory_size(
         &mut self,
         emitter: &mut Emitter,
@@ -2457,6 +2514,7 @@ impl WasmCompiler {
     }
 
     /// Compile memory.grow - grow memory by delta pages, return previous size or -1 on failure
+    #[inline]
     fn compile_memory_grow(
         &mut self,
         emitter: &mut Emitter,
@@ -2516,6 +2574,7 @@ impl WasmCompiler {
 
     /// Compile call - direct function call
     /// Supports functions with more than 3 parameters by passing extra args on stack
+    #[inline]
     fn compile_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2621,6 +2680,7 @@ impl WasmCompiler {
 
     /// Compile call_indirect - indirect function call through table
     /// Supports functions with more than 3 parameters by passing extra args on stack
+    #[inline]
     fn compile_call_indirect(
         &mut self,
         emitter: &mut Emitter,
@@ -2760,6 +2820,7 @@ impl WasmCompiler {
     }
 
     /// Compile br_table - branch table (switch-like construct)
+    #[inline]
     fn compile_br_table(
         &mut self,
         emitter: &mut Emitter,
@@ -2805,7 +2866,8 @@ impl WasmCompiler {
     }
 }
 
-impl Default for WasmCompiler {
+impl Default for Function {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
@@ -2817,33 +2879,190 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
+    #[inline]
     pub fn as_fn_0(&self) -> fn() -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
+
+    #[inline]
     pub fn as_fn_1(&self) -> fn(i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
+
+    #[inline]
     pub fn as_fn_2(&self) -> fn(i32, i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
+
+    #[inline]
     pub fn as_fn_3(&self) -> fn(i32, i32, i32) -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
 }
 
 /// Compile a simple WebAssembly function from operators
-pub fn compile_simple(
+#[inline]
+pub fn compile_simple<'a>(
     params: &[ValType],
     results: &[ValType],
-    locals: &[(u32, ValType)],
-    body: &[Operator],
+    locals: &[ValType],
+    body: impl Iterator<Item = Operator<'a>>,
 ) -> Result<CompiledFunction, CompileError> {
     let mut compiler = Compiler::new();
-    let mut wasm_compiler = WasmCompiler::new();
+    let mut wasm_compiler = Function::new();
     wasm_compiler.compile_function(&mut compiler, params, results, locals, body)?;
     Ok(CompiledFunction {
         code: compiler.generate_code(),
     })
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Engine {}
+
+#[derive(Clone, Debug)]
+pub struct Module<'a> {
+    engine: &'a Engine,
+
+    /// Import entries
+    imports: Vec<Import<'a>>,
+
+    /// Global variables
+    globals: Vec<GlobalInfo>,
+    /// Memory instance
+    memory: Option<MemoryInfo>,
+    /// Function table for direct calls
+    functions: Vec<FunctionEntry>,
+    /// Tables for indirect calls
+    tables: Vec<TableEntry>,
+    /// Function types for call_indirect
+    func_types: Vec<FuncType>,
+}
+
+impl<'a> Module<'a> {
+    pub fn new(engine: &'a Engine, wasm: &'a [u8]) -> Result<Self, Box<dyn Error + 'a>> {
+        let mut imports = vec![];
+
+        let parser = wasmparser::Parser::new(0);
+        for payload in parser.parse_all(wasm) {
+            match payload? {
+                wasmparser::Payload::TypeSection(types) => {
+                    for ty in types {
+                        let ty = ty?;
+                    }
+                }
+                wasmparser::Payload::ImportSection(import_section) => {
+                    for import in import_section {
+                        match import? {
+                            wasmparser::Imports::Single(_, import) => {
+                                imports.push(import.clone());
+                            }
+                            wasmparser::Imports::Compact1 { module, items } => todo!(),
+                            wasmparser::Imports::Compact2 { module, ty, names } => todo!(),
+                        }
+                    }
+                }
+                wasmparser::Payload::FunctionSection(functions) => {
+                    for func in functions {
+                        let func = func?;
+                    }
+                }
+                wasmparser::Payload::CodeSectionStart { count, .. } => {
+                    todo!()
+                }
+                wasmparser::Payload::CodeSectionEntry(body) => {
+                    let body: Vec<Operator> = body
+                        .get_operators_reader()?
+                        .into_iter()
+                        .collect::<Result<_, _>>()?;
+                }
+                wasmparser::Payload::Version {
+                    num,
+                    encoding,
+                    range,
+                } => todo!(),
+                wasmparser::Payload::TableSection(section_limited) => {
+                    for table in section_limited {
+                        let table = table?;
+                    }
+                }
+                wasmparser::Payload::MemorySection(section_limited) => {
+                    for memory in section_limited {
+                        let memory = memory?;
+                    }
+                }
+                wasmparser::Payload::TagSection(section_limited) => {
+                    for tag in section_limited {
+                        let tag = tag?;
+                    }
+                }
+                wasmparser::Payload::GlobalSection(section_limited) => {
+                    for global in section_limited {
+                        let global = global?;
+                    }
+                }
+                wasmparser::Payload::ExportSection(section_limited) => {
+                    for export in section_limited {
+                        let export = export?;
+                    }
+                }
+                wasmparser::Payload::StartSection { func, range } => todo!(),
+                wasmparser::Payload::ElementSection(section_limited) => {
+                    for element in section_limited {
+                        let element = element?;
+                    }
+                }
+                wasmparser::Payload::DataCountSection { count, range } => todo!(),
+                wasmparser::Payload::DataSection(section_limited) => {
+                    for data in section_limited {
+                        let data = data?;
+                    }
+                }
+                wasmparser::Payload::ModuleSection {
+                    parser,
+                    unchecked_range,
+                } => todo!(),
+                wasmparser::Payload::InstanceSection(section_limited) => {
+                    for instance in section_limited {
+                        let instance = instance?;
+                    }
+                }
+                wasmparser::Payload::CoreTypeSection(section_limited) => {
+                    for core_type in section_limited {
+                        let core_type = core_type?;
+                    }
+                }
+                wasmparser::Payload::ComponentSection {
+                    parser,
+                    unchecked_range,
+                } => todo!(),
+                wasmparser::Payload::ComponentInstanceSection(section_limited) => todo!(),
+                wasmparser::Payload::ComponentAliasSection(section_limited) => todo!(),
+                wasmparser::Payload::ComponentTypeSection(section_limited) => todo!(),
+                wasmparser::Payload::ComponentCanonicalSection(section_limited) => todo!(),
+                wasmparser::Payload::ComponentStartSection { start, range } => todo!(),
+                wasmparser::Payload::ComponentImportSection(section_limited) => todo!(),
+                wasmparser::Payload::ComponentExportSection(section_limited) => todo!(),
+                wasmparser::Payload::CustomSection(custom_section_reader) => todo!(),
+                wasmparser::Payload::UnknownSection {
+                    id,
+                    contents,
+                    range,
+                } => todo!(),
+                wasmparser::Payload::End(_) => todo!(),
+                _ => todo!(),
+            }
+        }
+
+        Ok(Self {
+            imports,
+            engine,
+            globals: todo!(),
+            memory: todo!(),
+            functions: todo!(),
+            tables: todo!(),
+            func_types: todo!(),
+        })
+    }
 }
 
 #[cfg(test)]

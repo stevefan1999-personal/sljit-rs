@@ -9,7 +9,7 @@ repository = "https://github.com/stevefan1999-personal/sljit-rs"
 version = "0.4.0"
 
 [workspace.dependencies]
-sljit-sys = { version = "0.4.0", path = "sljit-sys" }
+sljit-sys = { version = "0.4.0", path = "sljit-sys", default-features = false }
 
 [package]
 name = "sljit"
@@ -28,7 +28,7 @@ sljit-sys.workspace = true
 crunchy = "0.2.4"
 
 [features]
-default = ["arch-host"]
+default = ["arch-host", "bindgen"]
 arch-i386 = ["sljit-sys/arch-i386"]
 arch-x86_64 = ["sljit-sys/arch-x86_64"]
 arch-armv6 = ["sljit-sys/arch-armv6"]
