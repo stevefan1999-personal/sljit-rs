@@ -1,12 +1,12 @@
 [package]
 name = "sljit-sys"
-version.workspace = true
-edition = "2024"
-license-file = "sljit/LICENSE"
-description = "System crate for sljit using bindgen and ast-grep"
 authors.workspace = true
-repository.workspace = true
+description = "System crate for sljit using bindgen and ast-grep"
+edition.workspace = true
 keywords.workspace = true
+license-file = "sljit/LICENSE"
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 derive_more = { version = "2.1.1", default-features = false, features = ["from", "try_from", "error", "display"] }
