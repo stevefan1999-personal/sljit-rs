@@ -1,7 +1,56 @@
 use crunchy::unroll;
-use wasmparser::{Ieee32, Ieee64};
+use wasmparser::{Ieee32, Ieee64, Parser, Payload};
 
 use super::*;
+
+/// Helper function to compile from WAT (WebAssembly Text format)
+/// Returns the exported "test" function
+fn compile_from_wat_with_signature(
+    wat: &str,
+    params: &[ValType],
+    results: &[ValType],
+) -> Result<CompiledFunction, CompileError> {
+    let wasm = wat::parse_str(wat).map_err(|e| CompileError::Parse(e.to_string()))?;
+
+    let mut compiler = Compiler::new();
+    let mut wasm_compiler = Function::new();
+
+    for payload in Parser::new(0).parse_all(&wasm) {
+        match payload.map_err(|e| CompileError::Parse(e.to_string()))? {
+            Payload::CodeSectionEntry(body) => {
+                let mut locals_reader = body
+                    .get_locals_reader()
+                    .map_err(|e| CompileError::Parse(e.to_string()))?;
+
+                let mut locals_vec = vec![];
+                for _ in 0..locals_reader.get_count() {
+                    let (count, val_type) = locals_reader
+                        .read()
+                        .map_err(|e| CompileError::Parse(e.to_string()))?;
+                    for _ in 0..count {
+                        locals_vec.push(val_type);
+                    }
+                }
+
+                wasm_compiler.compile_function(
+                    &mut compiler,
+                    params,
+                    results,
+                    &locals_vec,
+                    body.get_operators_reader()
+                        .map_err(|e| CompileError::Parse(e.to_string()))?
+                        .into_iter()
+                        .flatten(),
+                )?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(CompiledFunction {
+        code: compiler.generate_code(),
+    })
+}
 
 #[test]
 fn test_simple_add() {
@@ -3614,4 +3663,161 @@ fn test_iterative_fibonacci() {
             assert_eq!(f(i as i32), const { fib(i as i32) });
         }
     }
+}
+
+#[test]
+fn test_br_table_simple() {
+    // Test br_table: simple switch-like branching
+    // Function: (param i32) (result i32)
+    // Returns different values based on the input parameter using br_table
+    //
+    // switch (param) {
+    //   case 0: return 10;
+    //   case 1: return 20;
+    //   case 2: return 30;
+    //   default: return 99;
+    // }
+
+    let wat = r#"
+        (module
+            (func (export "test") (param i32) (result i32)
+                (block $default (result i32)
+                    (block $case2 (result i32)
+                        (block $case1 (result i32)
+                            (block $case0 (result i32)
+                                local.get 0
+                                br_table $case0 $case1 $case2 $default
+                            )
+                            ;; case 0: return 10
+                            i32.const 10
+                            return
+                        )
+                        ;; case 1: return 20
+                        i32.const 20
+                        return
+                    )
+                    ;; case 2: return 30
+                    i32.const 30
+                    return
+                )
+                ;; default: return 99
+                i32.const 99
+            )
+        )
+    "#;
+
+    let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
+        .expect("Compilation failed");
+    let f = func.as_fn_1();
+
+    assert_eq!(f(0), 10); // case 0
+    assert_eq!(f(1), 20); // case 1
+    assert_eq!(f(2), 30); // case 2
+    assert_eq!(f(3), 99); // default (index == table length)
+    assert_eq!(f(4), 99); // default (index > table length)
+    assert_eq!(f(100), 99); // default (large index)
+}
+
+#[test]
+fn test_br_table_with_computation() {
+    // Test br_table with computation in each target
+    // Function: (param i32 i32) (result i32)
+    // Performs different operations based on the first parameter
+    //
+    // switch (param0) {
+    //   case 0: return param1 + 10;
+    //   case 1: return param1 * 2;
+    //   case 2: return param1 - 5;
+    //   default: return 0;
+    // }
+
+    let wat = r#"
+        (module
+            (func (export "test") (param i32 i32) (result i32)
+                (block $default (result i32)
+                    (block $case2 (result i32)
+                        (block $case1 (result i32)
+                            (block $case0 (result i32)
+                                local.get 0
+                                br_table $case0 $case1 $case2 $default
+                            )
+                            ;; case 0: param1 + 10
+                            local.get 1
+                            i32.const 10
+                            i32.add
+                            return
+                        )
+                        ;; case 1: param1 * 2
+                        local.get 1
+                        i32.const 2
+                        i32.mul
+                        return
+                    )
+                    ;; case 2: param1 - 5
+                    local.get 1
+                    i32.const 5
+                    i32.sub
+                    return
+                )
+                ;; default: return 0
+                i32.const 0
+            )
+        )
+    "#;
+
+    let func = compile_from_wat_with_signature(wat, &[ValType::I32, ValType::I32], &[ValType::I32])
+        .expect("Compilation failed");
+    let f = func.as_fn_2();
+
+    // Test case 0: add 10
+    assert_eq!(f(0, 5), 15); // 5 + 10 = 15
+    assert_eq!(f(0, 100), 110); // 100 + 10 = 110
+
+    // Test case 1: multiply by 2
+    assert_eq!(f(1, 5), 10); // 5 * 2 = 10
+    assert_eq!(f(1, 100), 200); // 100 * 2 = 200
+
+    // Test case 2: subtract 5
+    assert_eq!(f(2, 10), 5); // 10 - 5 = 5
+    assert_eq!(f(2, 100), 95); // 100 - 5 = 95
+
+    // Test default case
+    assert_eq!(f(3, 42), 0); // default
+    assert_eq!(f(10, 999), 0); // default
+}
+
+#[test]
+fn test_br_table_fallthrough() {
+    // Test br_table where all cases branch to the same target (tests edge case)
+    // Function: (param i32) (result i32)
+    // All cases should return 42
+
+    let wat = r#"
+        (module
+            (func (export "test") (param i32) (result i32)
+                (block $outer (result i32)
+                    (block $inner (result i32)
+                        local.get 0
+                        br_table $outer $outer $outer $outer
+                    )
+                    ;; This code is unreachable
+                    i32.const 0
+                    return
+                )
+                ;; All cases return 42
+                i32.const 42
+            )
+        )
+    "#;
+
+    let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
+        .expect("Compilation failed");
+    let f = func.as_fn_1();
+
+    // All cases should return 42
+    assert_eq!(f(0), 42);
+    assert_eq!(f(1), 42);
+    assert_eq!(f(2), 42);
+    assert_eq!(f(3), 42);
+    assert_eq!(f(100), 42);
 }
