@@ -9,5 +9,4 @@ version.workspace = true
 [dependencies]
 wasmparser = "0.244.0"
 sljit = { path = ".." }
-libm = "0.2"
 indexmap = "2.13.0"

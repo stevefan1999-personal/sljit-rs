@@ -8,7 +8,7 @@ fn test_simple_add() {
     // local.get 0
     // local.get 1
     // i32.add
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Add,
@@ -28,7 +28,7 @@ fn test_simple_add() {
 fn test_constant() {
     // Function: (result i32)
     // i32.const 42
-    let body = vec![Operator::I32Const { value: 42 }, Operator::End];
+    let body = [Operator::I32Const { value: 42 }, Operator::End];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
@@ -44,7 +44,7 @@ fn test_local_variable() {
     // i32.add
     // local.set 1
     // local.get 1
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Const { value: 10 },
         Operator::I32Add,
@@ -74,7 +74,7 @@ fn test_arithmetic() {
     // i32.mul
     // i32.const 2
     // i32.add
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Mul,
@@ -97,7 +97,7 @@ fn test_comparison() {
     // local.get 0
     // local.get 1
     // i32.lt_s
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32LtS,
@@ -122,7 +122,7 @@ fn test_simple_if() {
     // else
     //   i32.const 0
     // end
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::If {
             blockty: wasmparser::BlockType::Type(ValType::I32),
@@ -151,7 +151,7 @@ fn test_block_br() {
     //   br 0
     // end
     // (note: value is dropped since block has Empty type)
-    let body = vec![
+    let body = [
         Operator::Block {
             blockty: wasmparser::BlockType::Empty,
         },
@@ -170,7 +170,7 @@ fn test_block_br() {
 #[test]
 fn test_division() {
     // Test i32.div_s: 20 / 3 = 6
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32DivS,
@@ -190,7 +190,7 @@ fn test_division() {
 #[test]
 fn test_remainder() {
     // Test i32.rem_s: 20 % 3 = 2
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32RemS,
@@ -209,7 +209,7 @@ fn test_remainder() {
 #[test]
 fn test_unsigned_division() {
     // Test i32.div_u
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32DivU,
@@ -230,7 +230,7 @@ fn test_unsigned_division() {
 #[test]
 fn test_rotation() {
     // Test i32.rotl: rotate left
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Rotl,
@@ -252,7 +252,7 @@ fn test_rotation() {
 #[test]
 fn test_rotation_right() {
     // Test i32.rotr: rotate right
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Rotr,
@@ -272,7 +272,7 @@ fn test_rotation_right() {
 #[test]
 fn test_clz() {
     // Test i32.clz: count leading zeros
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Clz,
         Operator::End,
@@ -292,7 +292,7 @@ fn test_clz() {
 #[test]
 fn test_ctz() {
     // Test i32.ctz: count trailing zeros
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Ctz,
         Operator::End,
@@ -312,7 +312,7 @@ fn test_ctz() {
 #[test]
 fn test_popcnt() {
     // Test i32.popcnt: population count (number of 1 bits)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Popcnt,
         Operator::End,
@@ -333,7 +333,7 @@ fn test_popcnt() {
 #[test]
 fn test_bitwise_operations() {
     // Test i32.and
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32And,
@@ -351,7 +351,7 @@ fn test_bitwise_operations() {
 #[test]
 fn test_shift_operations() {
     // Test i32.shl
-    let body_shl = vec![
+    let body_shl = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Shl,
@@ -371,7 +371,7 @@ fn test_shift_operations() {
     assert_eq!(f_shl(0xFF, 8), 0xFF00);
 
     // Test i32.shr_s (arithmetic shift)
-    let body_shrs = vec![
+    let body_shrs = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32ShrS,
@@ -391,7 +391,7 @@ fn test_shift_operations() {
     assert_eq!(f_shrs(-16, 2), -4); // Arithmetic shift preserves sign
 
     // Test i32.shr_u (logical shift)
-    let body_shru = vec![
+    let body_shru = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32ShrU,
@@ -416,7 +416,7 @@ fn test_shift_operations() {
 #[cfg(target_pointer_width = "64")]
 fn test_i64_basic() {
     // Test i64.const and basic operations on 64-bit platforms
-    let body = vec![
+    let body = [
         Operator::I64Const {
             value: 0x123456789ABCDEFi64,
         },
@@ -434,7 +434,7 @@ fn test_i64_basic() {
 #[test]
 fn test_eqz() {
     // Test i32.eqz
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Eqz,
         Operator::End,
@@ -453,7 +453,7 @@ fn test_eqz() {
 #[test]
 fn test_select() {
     // Test select: if cond then val1 else val2
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 10 },      // val1
         Operator::I32Const { value: 20 },      // val2
         Operator::LocalGet { local_index: 0 }, // cond
@@ -473,7 +473,7 @@ fn test_select() {
 #[test]
 fn test_subtraction() {
     // Test i32.sub
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Sub,
@@ -492,7 +492,7 @@ fn test_subtraction() {
 #[test]
 fn test_or_operation() {
     // Test i32.or
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Or,
@@ -511,7 +511,7 @@ fn test_or_operation() {
 #[test]
 fn test_xor_operation() {
     // Test i32.xor
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Xor,
@@ -530,7 +530,7 @@ fn test_xor_operation() {
 #[test]
 fn test_unsigned_remainder() {
     // Test i32.rem_u
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32RemU,
@@ -551,7 +551,7 @@ fn test_unsigned_remainder() {
 #[test]
 fn test_eq_comparison() {
     // Test i32.eq
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Eq,
@@ -571,7 +571,7 @@ fn test_eq_comparison() {
 #[test]
 fn test_ne_comparison() {
     // Test i32.ne
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32Ne,
@@ -590,7 +590,7 @@ fn test_ne_comparison() {
 #[test]
 fn test_lt_u_comparison() {
     // Test i32.lt_u (unsigned less than)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32LtU,
@@ -611,7 +611,7 @@ fn test_lt_u_comparison() {
 #[test]
 fn test_gt_s_comparison() {
     // Test i32.gt_s (signed greater than)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32GtS,
@@ -631,7 +631,7 @@ fn test_gt_s_comparison() {
 #[test]
 fn test_gt_u_comparison() {
     // Test i32.gt_u (unsigned greater than)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32GtU,
@@ -652,7 +652,7 @@ fn test_gt_u_comparison() {
 #[test]
 fn test_le_s_comparison() {
     // Test i32.le_s (signed less than or equal)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32LeS,
@@ -672,7 +672,7 @@ fn test_le_s_comparison() {
 #[test]
 fn test_le_u_comparison() {
     // Test i32.le_u (unsigned less than or equal)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32LeU,
@@ -692,7 +692,7 @@ fn test_le_u_comparison() {
 #[test]
 fn test_ge_s_comparison() {
     // Test i32.ge_s (signed greater than or equal)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32GeS,
@@ -712,7 +712,7 @@ fn test_ge_s_comparison() {
 #[test]
 fn test_ge_u_comparison() {
     // Test i32.ge_u (unsigned greater than or equal)
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::LocalGet { local_index: 1 },
         Operator::I32GeU,
@@ -748,7 +748,7 @@ fn test_loop_br() {
     //   local.set 1   ;; sum = n + sum
     //   br 0          ;; continue loop
     // end
-    let body = vec![
+    let body = [
         Operator::Block {
             blockty: wasmparser::BlockType::Empty,
         },
@@ -790,7 +790,7 @@ fn test_loop_br() {
 #[test]
 fn test_drop() {
     // Test drop: discards value from stack
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 100 },
         Operator::I32Const { value: 42 },
         Operator::Drop, // drop 42
@@ -806,7 +806,7 @@ fn test_drop() {
 #[test]
 fn test_nop() {
     // Test nop: does nothing
-    let body = vec![
+    let body = [
         Operator::Nop,
         Operator::I32Const { value: 42 },
         Operator::Nop,
@@ -824,7 +824,7 @@ fn test_nop() {
 fn test_local_tee() {
     // Test local.tee: sets local AND leaves value on stack
     // result = (x + 10) where local[1] = x + 10
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Const { value: 10 },
         Operator::I32Add,
@@ -848,7 +848,7 @@ fn test_local_tee() {
 #[test]
 fn test_return_early() {
     // Test return: exits function early
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 0 },
         Operator::I32Eqz,
         Operator::If {
@@ -874,7 +874,7 @@ fn test_return_early() {
 fn test_br_if() {
     // Test br_if: conditional branch
     // if (x > 5) return 1 else return 0
-    let body = vec![
+    let body = [
         Operator::Block {
             blockty: wasmparser::BlockType::Type(ValType::I32),
         },
@@ -905,7 +905,7 @@ fn test_br_if() {
 #[cfg(target_pointer_width = "64")]
 fn test_i64_arithmetic() {
     // Test i64 add and sub
-    let body_add = vec![
+    let body_add = [
         Operator::LocalGet { local_index: 0 },
         Operator::I64ExtendI32S,
         Operator::LocalGet { local_index: 1 },
@@ -928,7 +928,7 @@ fn test_i64_arithmetic() {
     assert_eq!(f_add(-5, 10), 5);
 
     // Test i64 sub
-    let body_sub = vec![
+    let body_sub = [
         Operator::LocalGet { local_index: 0 },
         Operator::I64ExtendI32S,
         Operator::LocalGet { local_index: 1 },
@@ -955,7 +955,7 @@ fn test_i64_arithmetic() {
 #[cfg(target_pointer_width = "64")]
 fn test_i64_bitwise() {
     // Test i64 and, or, xor
-    let body_and = vec![
+    let body_and = [
         Operator::I64Const { value: 0xFF00FF00 },
         Operator::I64Const { value: 0x0FF00FF0 },
         Operator::I64And,
@@ -968,7 +968,7 @@ fn test_i64_bitwise() {
     let f = func.as_fn_0();
     assert_eq!(f(), 0x0F000F00u32 as i32);
 
-    let body_or = vec![
+    let body_or = [
         Operator::I64Const { value: 0xFF00 },
         Operator::I64Const { value: 0x00FF },
         Operator::I64Or,
@@ -981,7 +981,7 @@ fn test_i64_bitwise() {
     let f_or = func_or.as_fn_0();
     assert_eq!(f_or(), 0xFFFF);
 
-    let body_xor = vec![
+    let body_xor = [
         Operator::I64Const { value: 0xFFFF },
         Operator::I64Const { value: 0x0F0F },
         Operator::I64Xor,
@@ -1000,7 +1000,7 @@ fn test_i64_bitwise() {
 #[cfg(target_pointer_width = "64")]
 fn test_i64_shifts() {
     // Test i64 shl, shr_s, shr_u
-    let body_shl = vec![
+    let body_shl = [
         Operator::I64Const { value: 1 },
         Operator::I64Const { value: 32 },
         Operator::I64Shl,
@@ -1016,7 +1016,7 @@ fn test_i64_shifts() {
     assert_eq!(f_shl(), 0);
 
     // Test shr_s
-    let body_shrs = vec![
+    let body_shrs = [
         Operator::I64Const { value: -16 },
         Operator::I64Const { value: 2 },
         Operator::I64ShrS,
@@ -1031,7 +1031,7 @@ fn test_i64_shifts() {
     assert_eq!(f_shrs(), -4);
 
     // Test shr_u
-    let body_shru = vec![
+    let body_shru = [
         Operator::I64Const { value: 16 },
         Operator::I64Const { value: 2 },
         Operator::I64ShrU,
@@ -1053,7 +1053,7 @@ fn test_i64_extend() {
     // To verify: extend -1, shift right 32 bits, wrap to i32
     // If sign extended: 0xFFFFFFFFFFFFFFFF >> 32 = 0xFFFFFFFF = -1
     // If not: 0x00000000FFFFFFFF >> 32 = 0x00000000 = 0
-    let body_s = vec![
+    let body_s = [
         Operator::I32Const { value: -1 },
         Operator::I64ExtendI32S,
         Operator::I64Const { value: 32 },
@@ -1069,7 +1069,7 @@ fn test_i64_extend() {
     assert_eq!(f_s(), -1);
 
     // Test i64.extend_i32_u: zero extension should clear all upper bits
-    let body_u = vec![
+    let body_u = [
         Operator::I32Const { value: -1 },
         Operator::I64ExtendI32U,
         Operator::I64Const { value: 32 },
@@ -1096,7 +1096,7 @@ fn test_memory_i32_store_load() {
     // i32.store        ;; store 42 at offset 0
     // i32.const 0      ;; offset
     // i32.load         ;; load from offset 0
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },  // offset
         Operator::I32Const { value: 42 }, // value
         Operator::I32Store {
@@ -1123,7 +1123,7 @@ fn test_memory_i32_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     // Create a memory buffer
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1134,7 +1134,7 @@ fn test_memory_i32_store_load() {
 #[test]
 fn test_memory_i32_store_load_with_offset() {
     // Store at offset 8, load from offset 8
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },   // base offset
         Operator::I32Const { value: 123 }, // value
         Operator::I32Store {
@@ -1160,7 +1160,7 @@ fn test_memory_i32_store_load_with_offset() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1172,7 +1172,7 @@ fn test_memory_i32_store_load_with_offset() {
 fn test_memory_i8_store_load() {
     // Test I32Store8 and I32Load8U / I32Load8S
     // Store 0xFF (-1 as signed byte), load unsigned and signed
-    let body_unsigned = vec![
+    let body_unsigned = [
         Operator::I32Const { value: 0 },
         Operator::I32Const { value: 0xFF }, // 255 or -1 as signed
         Operator::I32Store8 {
@@ -1198,14 +1198,14 @@ fn test_memory_i8_store_load() {
     let func_u = compile_simple(&[ValType::I32], &[ValType::I32], &[], &body_unsigned)
         .expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f_u = func_u.as_fn_1();
     assert_eq!(f_u(memory_base), 255); // Unsigned load: 0xFF = 255
 
     // Test signed load
-    let body_signed = vec![
+    let body_signed = [
         Operator::I32Const { value: 0 },
         Operator::I32Const { value: 0xFF },
         Operator::I32Store8 {
@@ -1231,7 +1231,7 @@ fn test_memory_i8_store_load() {
     let func_s = compile_simple(&[ValType::I32], &[ValType::I32], &[], &body_signed)
         .expect("Compilation failed");
 
-    let mut memory2 = vec![0u8; 64];
+    let mut memory2 = [0u8; 64];
     let memory_base2 = memory2.as_mut_ptr() as i32;
 
     let f_s = func_s.as_fn_1();
@@ -1241,7 +1241,7 @@ fn test_memory_i8_store_load() {
 #[test]
 fn test_memory_i16_store_load() {
     // Test I32Store16 and I32Load16U / I32Load16S
-    let body_unsigned = vec![
+    let body_unsigned = [
         Operator::I32Const { value: 0 },
         Operator::I32Const { value: 0xFFFF }, // 65535 or -1 as signed i16
         Operator::I32Store16 {
@@ -1267,14 +1267,14 @@ fn test_memory_i16_store_load() {
     let func_u = compile_simple(&[ValType::I32], &[ValType::I32], &[], &body_unsigned)
         .expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f_u = func_u.as_fn_1();
     assert_eq!(f_u(memory_base), 65535); // Unsigned load: 0xFFFF = 65535
 
     // Test signed load
-    let body_signed = vec![
+    let body_signed = [
         Operator::I32Const { value: 0 },
         Operator::I32Const { value: 0xFFFF },
         Operator::I32Store16 {
@@ -1300,7 +1300,7 @@ fn test_memory_i16_store_load() {
     let func_s = compile_simple(&[ValType::I32], &[ValType::I32], &[], &body_signed)
         .expect("Compilation failed");
 
-    let mut memory2 = vec![0u8; 64];
+    let mut memory2 = [0u8; 64];
     let memory_base2 = memory2.as_mut_ptr() as i32;
 
     let f_s = func_s.as_fn_1();
@@ -1310,7 +1310,7 @@ fn test_memory_i16_store_load() {
 #[test]
 fn test_memory_multiple_stores_loads() {
     // Store multiple values at different offsets and load them back
-    let body = vec![
+    let body = [
         // Store 10 at offset 0
         Operator::I32Const { value: 0 },
         Operator::I32Const { value: 10 },
@@ -1380,7 +1380,7 @@ fn test_memory_multiple_stores_loads() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1394,7 +1394,7 @@ fn test_memory_dynamic_offset() {
     // Function: (param i32 i32) (result i32)
     // param 0 = memory base, param 1 = offset
     // Store 99 at the given offset, then load it back
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 1 }, // offset from param
         Operator::I32Const { value: 99 },
         Operator::I32Store {
@@ -1420,7 +1420,7 @@ fn test_memory_dynamic_offset() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_2();
@@ -1437,7 +1437,7 @@ fn test_memory_dynamic_offset() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_store_load() {
     // Test I64Store and I64Load
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // offset (as i32)
         Operator::I64Const {
             value: 0x123456789ABCDEFi64,
@@ -1466,7 +1466,7 @@ fn test_memory_i64_store_load() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1480,7 +1480,7 @@ fn test_memory_i64_store_load() {
 fn test_memory_i64_store_load_full_value() {
     // Verify full 64-bit value is stored and loaded correctly
     // by checking both upper and lower 32 bits
-    let body = vec![
+    let body = [
         // Store a 64-bit value
         Operator::I32Const { value: 0 },
         Operator::I64Const {
@@ -1513,7 +1513,7 @@ fn test_memory_i64_store_load_full_value() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1526,7 +1526,7 @@ fn test_memory_i64_store_load_full_value() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load8_unsigned() {
     // Test I64Load8U - load byte and zero-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const { value: 0xFF }, // Store 0xFF (255)
         Operator::I64Store8 {
@@ -1553,7 +1553,7 @@ fn test_memory_i64_load8_unsigned() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1565,7 +1565,7 @@ fn test_memory_i64_load8_unsigned() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load8_signed() {
     // Test I64Load8S - load byte and sign-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const { value: 0xFF }, // Store 0xFF (-1 as signed byte)
         Operator::I64Store8 {
@@ -1592,7 +1592,7 @@ fn test_memory_i64_load8_signed() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1604,7 +1604,7 @@ fn test_memory_i64_load8_signed() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load16_unsigned() {
     // Test I64Load16U - load 16-bit and zero-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const { value: 0xFFFF }, // Store 0xFFFF (65535)
         Operator::I64Store16 {
@@ -1631,7 +1631,7 @@ fn test_memory_i64_load16_unsigned() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1643,7 +1643,7 @@ fn test_memory_i64_load16_unsigned() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load16_signed() {
     // Test I64Load16S - load 16-bit and sign-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const { value: 0xFFFF }, // Store 0xFFFF (-1 as signed i16)
         Operator::I64Store16 {
@@ -1670,7 +1670,7 @@ fn test_memory_i64_load16_signed() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1682,7 +1682,7 @@ fn test_memory_i64_load16_signed() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load32_unsigned() {
     // Test I64Load32U - load 32-bit and zero-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const {
             value: 0xFFFFFFFFi64,
@@ -1714,7 +1714,7 @@ fn test_memory_i64_load32_unsigned() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1726,7 +1726,7 @@ fn test_memory_i64_load32_unsigned() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_load32_signed() {
     // Test I64Load32S - load 32-bit and sign-extend to 64-bit
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const {
             value: 0xFFFFFFFFi64,
@@ -1758,7 +1758,7 @@ fn test_memory_i64_load32_signed() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1770,7 +1770,7 @@ fn test_memory_i64_load32_signed() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_with_offset() {
     // Test I64 store/load with static offset
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 },
         Operator::I64Const {
             value: 0xDEADBEEFCAFEBABEu64 as i64,
@@ -1799,7 +1799,7 @@ fn test_memory_i64_with_offset() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1812,7 +1812,7 @@ fn test_memory_i64_with_offset() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_i64_multiple_stores_loads() {
     // Store multiple I64 values and load them back
-    let body = vec![
+    let body = [
         // Store 0x1111111111111111 at offset 0
         Operator::I32Const { value: 0 },
         Operator::I64Const {
@@ -1866,7 +1866,7 @@ fn test_memory_i64_multiple_stores_loads() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1881,7 +1881,7 @@ fn test_memory_i64_multiple_stores_loads() {
 #[test]
 fn test_memory_f32_store_load() {
     // Test F32Store and F32Load
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // offset
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40490FDB)),
@@ -1911,7 +1911,7 @@ fn test_memory_f32_store_load() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1923,7 +1923,7 @@ fn test_memory_f32_store_load() {
 #[test]
 fn test_memory_f32_store_load_with_offset() {
     // Test F32Store and F32Load with static offset
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // base offset
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x41200000)),
@@ -1952,7 +1952,7 @@ fn test_memory_f32_store_load_with_offset() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -1964,7 +1964,7 @@ fn test_memory_f32_store_load_with_offset() {
 #[test]
 fn test_memory_f32_multiple_stores_loads() {
     // Store multiple F32 values and load them back, then add them
-    let body = vec![
+    let body = [
         // Store 1.5 at offset 0
         Operator::I32Const { value: 0 },
         Operator::F32Const {
@@ -2018,7 +2018,7 @@ fn test_memory_f32_multiple_stores_loads() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -2031,7 +2031,7 @@ fn test_memory_f32_multiple_stores_loads() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load() {
     // Test F64Store and F64Load
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // offset
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x400921FB54442D18)),
@@ -2062,7 +2062,7 @@ fn test_memory_f64_store_load() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -2075,7 +2075,7 @@ fn test_memory_f64_store_load() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load_upper_bits() {
     // Test F64Store and F64Load - verify upper 32 bits
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // offset
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x400921FB54442D18)),
@@ -2108,7 +2108,7 @@ fn test_memory_f64_store_load_upper_bits() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -2121,7 +2121,7 @@ fn test_memory_f64_store_load_upper_bits() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_f64_store_load_with_offset() {
     // Test F64Store and F64Load with static offset
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 0 }, // base offset
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4024000000000000)),
@@ -2153,7 +2153,7 @@ fn test_memory_f64_store_load_with_offset() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -2167,7 +2167,7 @@ fn test_memory_f64_store_load_with_offset() {
 fn test_memory_f64_multiple_stores_loads() {
     // Store multiple F64 values and load them back, then add them
 
-    let body = vec![
+    let body = [
         // Store 1.5 at offset 0
         Operator::I32Const { value: 0 },
         Operator::F64Const {
@@ -2224,7 +2224,7 @@ fn test_memory_f64_multiple_stores_loads() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_1();
@@ -2236,7 +2236,7 @@ fn test_memory_f64_multiple_stores_loads() {
 #[test]
 fn test_memory_f32_dynamic_offset() {
     // Use a parameter as the dynamic offset for F32
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 1 }, // offset from param
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x42280000)),
@@ -2265,7 +2265,7 @@ fn test_memory_f32_dynamic_offset() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let mut memory = vec![0u8; 64];
+    let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_2();
@@ -2280,7 +2280,7 @@ fn test_memory_f32_dynamic_offset() {
 #[cfg(target_pointer_width = "64")]
 fn test_memory_f64_dynamic_offset() {
     // Use a parameter as the dynamic offset for F64
-    let body = vec![
+    let body = [
         Operator::LocalGet { local_index: 1 }, // offset from param
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4045000000000000)),
@@ -2312,7 +2312,7 @@ fn test_memory_f64_dynamic_offset() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let mut memory = vec![0u8; 128];
+    let mut memory = [0u8; 128];
     let memory_base = memory.as_mut_ptr() as i32;
 
     let f = func.as_fn_2();
@@ -2332,7 +2332,7 @@ fn test_memory_f64_dynamic_offset() {
 #[test]
 fn test_f32_add() {
     // Test F32Add: 1.5 + 2.5 = 4.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x3FC00000)), // 1.5
         },
@@ -2354,7 +2354,7 @@ fn test_f32_add() {
 #[test]
 fn test_f32_sub() {
     // Test F32Sub: 5.0 - 2.0 = 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40A00000)), // 5.0
         },
@@ -2376,7 +2376,7 @@ fn test_f32_sub() {
 #[test]
 fn test_f32_mul() {
     // Test F32Mul: 3.0 * 4.0 = 12.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2398,7 +2398,7 @@ fn test_f32_mul() {
 #[test]
 fn test_f32_div() {
     // Test F32Div: 10.0 / 2.0 = 5.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x41200000)), // 10.0
         },
@@ -2420,7 +2420,7 @@ fn test_f32_div() {
 #[test]
 fn test_f32_min() {
     // Test F32Min: min(3.0, 5.0) = 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2442,7 +2442,7 @@ fn test_f32_min() {
 #[test]
 fn test_f32_max() {
     // Test F32Max: max(3.0, 5.0) = 5.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2464,7 +2464,7 @@ fn test_f32_max() {
 #[test]
 fn test_f32_copysign() {
     // Test F32Copysign: copysign(3.0, -1.0) = -3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2488,7 +2488,7 @@ fn test_f32_copysign() {
 #[test]
 fn test_f32_neg() {
     // Test F32Neg: neg(5.0) = -5.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40A00000)), // 5.0
         },
@@ -2507,7 +2507,7 @@ fn test_f32_neg() {
 #[test]
 fn test_f32_abs() {
     // Test F32Abs: abs(-5.0) = 5.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0xC0A00000)), // -5.0
         },
@@ -2526,7 +2526,7 @@ fn test_f32_abs() {
 #[test]
 fn test_f32_sqrt() {
     // Test F32Sqrt: sqrt(16.0) = 4.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x41800000)), // 16.0
         },
@@ -2545,7 +2545,7 @@ fn test_f32_sqrt() {
 #[test]
 fn test_f32_ceil() {
     // Test F32Ceil: ceil(2.3) = 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40133333)), // 2.3
         },
@@ -2564,7 +2564,7 @@ fn test_f32_ceil() {
 #[test]
 fn test_f32_floor() {
     // Test F32Floor: floor(2.7) = 2.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x402CCCCD)), // 2.7
         },
@@ -2583,7 +2583,7 @@ fn test_f32_floor() {
 #[test]
 fn test_f32_trunc() {
     // Test F32Trunc: trunc(2.7) = 2.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x402CCCCD)), // 2.7
         },
@@ -2602,7 +2602,7 @@ fn test_f32_trunc() {
 #[test]
 fn test_f32_nearest() {
     // Test F32Nearest: nearest(2.5) = 2.0 (round to even)
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40200000)), // 2.5
         },
@@ -2624,7 +2624,7 @@ fn test_f32_nearest() {
 #[test]
 fn test_f32_eq() {
     // Test F32Eq: 3.0 == 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2641,7 +2641,7 @@ fn test_f32_eq() {
     assert_eq!(f(), 1); // true
 
     // Test inequality
-    let body2 = vec![
+    let body2 = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2660,7 +2660,7 @@ fn test_f32_eq() {
 #[test]
 fn test_f32_ne() {
     // Test F32Ne: 3.0 != 4.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2680,7 +2680,7 @@ fn test_f32_ne() {
 #[test]
 fn test_f32_lt() {
     // Test F32Lt: 3.0 < 4.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2697,7 +2697,7 @@ fn test_f32_lt() {
     assert_eq!(f(), 1); // true
 
     // Test not less than
-    let body2 = vec![
+    let body2 = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40800000)), // 4.0
         },
@@ -2716,7 +2716,7 @@ fn test_f32_lt() {
 #[test]
 fn test_f32_gt() {
     // Test F32Gt: 5.0 > 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40A00000)), // 5.0
         },
@@ -2736,7 +2736,7 @@ fn test_f32_gt() {
 #[test]
 fn test_f32_le() {
     // Test F32Le: 3.0 <= 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -2756,7 +2756,7 @@ fn test_f32_le() {
 #[test]
 fn test_f32_ge() {
     // Test F32Ge: 5.0 >= 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40A00000)), // 5.0
         },
@@ -2779,7 +2779,7 @@ fn test_f32_ge() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_add() {
     // Test F64Add: 1.5 + 2.5 = 4.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x3FF8000000000000)), // 1.5
         },
@@ -2805,7 +2805,7 @@ fn test_f64_add() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_sub() {
     // Test F64Sub: 5.0 - 2.0 = 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4014000000000000)), // 5.0
         },
@@ -2831,7 +2831,7 @@ fn test_f64_sub() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_mul() {
     // Test F64Mul: 3.0 * 4.0 = 12.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -2857,7 +2857,7 @@ fn test_f64_mul() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_div() {
     // Test F64Div: 10.0 / 2.0 = 5.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4024000000000000)), // 10.0
         },
@@ -2883,7 +2883,7 @@ fn test_f64_div() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_min() {
     // Test F64Min: min(3.0, 5.0) = 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -2909,7 +2909,7 @@ fn test_f64_min() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_max() {
     // Test F64Max: max(3.0, 5.0) = 5.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -2935,7 +2935,7 @@ fn test_f64_max() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_copysign() {
     // Test F64Copysign: copysign(3.0, -1.0) = -3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -2963,7 +2963,7 @@ fn test_f64_copysign() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_neg() {
     // Test F64Neg: neg(5.0) = -5.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4014000000000000)), // 5.0
         },
@@ -2986,7 +2986,7 @@ fn test_f64_neg() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_abs() {
     // Test F64Abs: abs(-5.0) = 5.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0xC014000000000000)), // -5.0
         },
@@ -3009,7 +3009,7 @@ fn test_f64_abs() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_sqrt() {
     // Test F64Sqrt: sqrt(16.0) = 4.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4030000000000000)), // 16.0
         },
@@ -3032,7 +3032,7 @@ fn test_f64_sqrt() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_ceil() {
     // Test F64Ceil: ceil(2.3) = 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4002666666666666)), // 2.3
         },
@@ -3055,7 +3055,7 @@ fn test_f64_ceil() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_floor() {
     // Test F64Floor: floor(2.7) = 2.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4005999999999999)), // ~2.7
         },
@@ -3078,7 +3078,7 @@ fn test_f64_floor() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_trunc() {
     // Test F64Trunc: trunc(-2.7) = -2.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0xC005999999999999)), // ~-2.7
         },
@@ -3101,7 +3101,7 @@ fn test_f64_trunc() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_nearest() {
     // Test F64Nearest: nearest(2.5) = 2.0 (round to even)
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4004000000000000)), // 2.5
         },
@@ -3127,7 +3127,7 @@ fn test_f64_nearest() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_eq() {
     // Test F64Eq: 3.0 == 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -3148,7 +3148,7 @@ fn test_f64_eq() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_ne() {
     // Test F64Ne: 3.0 != 4.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -3169,7 +3169,7 @@ fn test_f64_ne() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_lt() {
     // Test F64Lt: 3.0 < 4.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -3190,7 +3190,7 @@ fn test_f64_lt() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_gt() {
     // Test F64Gt: 5.0 > 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4014000000000000)), // 5.0
         },
@@ -3211,7 +3211,7 @@ fn test_f64_gt() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_le() {
     // Test F64Le: 3.0 <= 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4008000000000000)), // 3.0
         },
@@ -3232,7 +3232,7 @@ fn test_f64_le() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_ge() {
     // Test F64Ge: 5.0 >= 3.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4014000000000000)), // 5.0
         },
@@ -3255,7 +3255,7 @@ fn test_f64_ge() {
 fn test_f32_convert_i32_s() {
     // Test F32ConvertI32S: convert signed i32 to f32
     // -10 as f32 = -10.0
-    let body = vec![
+    let body = [
         Operator::I32Const { value: -10 },
         Operator::F32ConvertI32S,
         Operator::I32ReinterpretF32,
@@ -3273,7 +3273,7 @@ fn test_f32_convert_i32_s() {
 fn test_f32_convert_i32_u() {
     // Test F32ConvertI32U: convert unsigned i32 to f32
     // 10 as f32 = 10.0
-    let body = vec![
+    let body = [
         Operator::I32Const { value: 10 },
         Operator::F32ConvertI32U,
         Operator::I32ReinterpretF32,
@@ -3292,7 +3292,7 @@ fn test_f32_convert_i32_u() {
 fn test_f64_convert_i32_s() {
     // Test F64ConvertI32S: convert signed i32 to f64
     // -10 as f64 = -10.0
-    let body = vec![
+    let body = [
         Operator::I32Const { value: -10 },
         Operator::F64ConvertI32S,
         Operator::I64ReinterpretF64,
@@ -3314,7 +3314,7 @@ fn test_f64_convert_i32_s() {
 fn test_f64_convert_i64_s() {
     // Test F64ConvertI64S: convert signed i64 to f64
     // 1000000 as f64 = 1000000.0
-    let body = vec![
+    let body = [
         Operator::I64Const { value: 1000000 },
         Operator::F64ConvertI64S,
         Operator::I64ReinterpretF64,
@@ -3335,7 +3335,7 @@ fn test_f64_convert_i64_s() {
 fn test_i32_trunc_f32_s() {
     // Test I32TruncF32S: truncate f32 to signed i32
     // -2.7f truncated = -2
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0xC02CCCCD)), // -2.7
         },
@@ -3353,7 +3353,7 @@ fn test_i32_trunc_f32_s() {
 fn test_i32_trunc_f32_u() {
     // Test I32TruncF32U: truncate f32 to unsigned i32
     // 2.7f truncated = 2
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x402CCCCD)), // 2.7
         },
@@ -3372,7 +3372,7 @@ fn test_i32_trunc_f32_u() {
 fn test_i32_trunc_f64_s() {
     // Test I32TruncF64S: truncate f64 to signed i32
     // -100.9 truncated = -100
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0xC059399999999999)), // -100.9
         },
@@ -3391,7 +3391,7 @@ fn test_i32_trunc_f64_s() {
 fn test_i64_trunc_f64_s() {
     // Test I64TruncF64S: truncate f64 to signed i64
     // -1000000.5 truncated = -1000000
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0xC12E848100000000)), // -1000000.5
         },
@@ -3413,7 +3413,7 @@ fn test_i64_trunc_f64_s() {
 fn test_f32_demote_f64() {
     // Test F32DemoteF64: convert f64 to f32
     // 3.14159... as f32
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x400921FB54442D18)), // PI
         },
@@ -3433,7 +3433,7 @@ fn test_f32_demote_f64() {
 fn test_f64_promote_f32() {
     // Test F64PromoteF32: convert f32 to f64
     // 3.0f as f64 = 3.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -3458,8 +3458,10 @@ fn test_f64_promote_f32() {
 fn test_f32_reinterpret_i32() {
     // Test F32ReinterpretI32: reinterpret i32 bits as f32
     // 0x40400000 interpreted as f32 is 3.0
-    let body = vec![
-        Operator::I32Const { value: 0x40400000u32 as i32 },
+    let body = [
+        Operator::I32Const {
+            value: 0x40400000u32 as i32,
+        },
         Operator::F32ReinterpretI32,
         // Add 1.0 to verify it's really a float
         Operator::F32Const {
@@ -3481,8 +3483,10 @@ fn test_f32_reinterpret_i32() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_reinterpret_i64() {
     // Test F64ReinterpretI64: reinterpret i64 bits as f64
-    let body = vec![
-        Operator::I64Const { value: 0x4008000000000000u64 as i64 }, // bits for 3.0
+    let body = [
+        Operator::I64Const {
+            value: 0x4008000000000000u64 as i64,
+        }, // bits for 3.0
         Operator::F64ReinterpretI64,
         // Add 1.0 to verify it's really a float
         Operator::F64Const {
@@ -3508,7 +3512,7 @@ fn test_f64_reinterpret_i64() {
 #[test]
 fn test_f32_combined_operations() {
     // Test a combined expression: (3.0 + 2.0) * 4.0 - 1.0 = 19.0
-    let body = vec![
+    let body = [
         Operator::F32Const {
             value: Ieee32::from(f32::from_bits(0x40400000)), // 3.0
         },
@@ -3540,7 +3544,7 @@ fn test_f32_combined_operations() {
 #[cfg(target_pointer_width = "64")]
 fn test_f64_combined_operations() {
     // Test a combined expression: sqrt(16.0) + abs(-2.0) = 4.0 + 2.0 = 6.0
-    let body = vec![
+    let body = [
         Operator::F64Const {
             value: Ieee64::from(f64::from_bits(0x4030000000000000)), // 16.0
         },

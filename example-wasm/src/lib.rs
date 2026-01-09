@@ -6,7 +6,9 @@
 //! Inspired by pwart's architecture, but simplified for clarity.
 
 use indexmap::IndexSet;
-use sljit::sys::{self, Compiler, GeneratedCode};
+use sljit::sys::{
+    self, Compiler, GeneratedCode, SLJIT_ARG_TYPE_F32, SLJIT_ARG_TYPE_F64, arg_types,
+};
 use sljit::{
     Condition, Emitter, FloatRegister, JumpType, Operand, ReturnOp, SavedRegister, ScratchRegister,
     mem_offset, mem_sp_offset, regs,
@@ -2220,13 +2222,9 @@ impl WasmCompiler {
 
         // Make the indirect call - use the appropriate arg types for float functions
         let arg_types = if is_f32 {
-            sys::SLJIT_ARG_TYPE_F32
-                | (sys::SLJIT_ARG_TYPE_F32 << 4)
-                | (sys::SLJIT_ARG_TYPE_F32 << 8)
+            arg_types!([F32, F32] -> F32)
         } else {
-            sys::SLJIT_ARG_TYPE_F64
-                | (sys::SLJIT_ARG_TYPE_F64 << 4)
-                | (sys::SLJIT_ARG_TYPE_F64 << 8)
+            arg_types!([F64, F64] -> F64)
         };
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
         self.free_register(addr_reg);
@@ -2272,9 +2270,9 @@ impl WasmCompiler {
 
         // Make the indirect call - use the appropriate arg types for float functions
         let arg_types = if is_f32 {
-            sys::SLJIT_ARG_TYPE_F32 | (sys::SLJIT_ARG_TYPE_F32 << 4)
+            arg_types!([F32] -> F32)
         } else {
-            sys::SLJIT_ARG_TYPE_F64 | (sys::SLJIT_ARG_TYPE_F64 << 4)
+            arg_types!([F64] -> F64)
         };
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
         self.free_register(addr_reg);
