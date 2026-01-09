@@ -2156,7 +2156,7 @@ impl WasmCompiler {
                     freg,
                     {
                         extern "C" fn func(x: f32) -> f32 {
-                            libm::rintf(x)
+                            x.round_ties_even()
                         }
                         func as *const () as usize
                     },
@@ -2169,7 +2169,7 @@ impl WasmCompiler {
                     freg,
                     {
                         extern "C" fn func(x: f64) -> f64 {
-                            libm::rint(x)
+                            x.round_ties_even()
                         }
                         func as *const () as usize
                     },
@@ -2493,10 +2493,6 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
-    pub fn as_<T>(&self) -> T {
-        unsafe { std::mem::transmute(self.code.get()) }
-    }
-
     pub fn as_fn_0(&self) -> fn() -> i32 {
         unsafe { std::mem::transmute(self.code.get()) }
     }
