@@ -7,7 +7,7 @@
 
 use std::error::Error;
 
-use indexmap::IndexSet;
+use bitvec::prelude::*;
 use sljit::sys::{
     self, Compiler, GeneratedCode, SLJIT_ARG_TYPE_F32, SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_W,
     arg_types,
@@ -25,6 +25,7 @@ pub enum CompileError {
     Sljit(sys::ErrorCode),
     Unsupported(String),
     Invalid(String),
+    RegisterAllocationFailed,
 }
 
 impl From<sys::ErrorCode> for CompileError {
@@ -222,8 +223,10 @@ pub struct Function {
     param_count: usize,
     frame_offset: i32,
     local_size: i32,
-    free_registers: IndexSet<ScratchRegister>,
-    free_float_registers: IndexSet<FloatRegister>,
+    /// Bitmap tracking free scratch registers (bit i = 1 means register i is free)
+    free_registers: BitArr!(for 10, in u16, Lsb0),
+    /// Bitmap tracking free float registers (bit i = 1 means register i is free)
+    free_float_registers: BitArr!(for 10, in u16, Lsb0),
     /// Global variables
     globals: Vec<GlobalInfo>,
     /// Memory instance
@@ -245,6 +248,24 @@ macro_rules! stack_underflow {
 
 impl Function {
     pub fn new() -> Self {
+        let mut free_registers = bitarr![u16, Lsb0; 0; 10];
+        // Mark R0-R5 as free
+        free_registers.set(ScratchRegister::R0 as usize, true);
+        free_registers.set(ScratchRegister::R1 as usize, true);
+        free_registers.set(ScratchRegister::R2 as usize, true);
+        free_registers.set(ScratchRegister::R3 as usize, true);
+        free_registers.set(ScratchRegister::R4 as usize, true);
+        free_registers.set(ScratchRegister::R5 as usize, true);
+
+        let mut free_float_registers = bitarr![u16, Lsb0; 0; 10];
+        // Mark FR0-FR5 as free
+        free_float_registers.set(FloatRegister::FR0 as usize, true);
+        free_float_registers.set(FloatRegister::FR1 as usize, true);
+        free_float_registers.set(FloatRegister::FR2 as usize, true);
+        free_float_registers.set(FloatRegister::FR3 as usize, true);
+        free_float_registers.set(FloatRegister::FR4 as usize, true);
+        free_float_registers.set(FloatRegister::FR5 as usize, true);
+
         Self {
             stack: vec![],
             blocks: vec![],
@@ -252,22 +273,8 @@ impl Function {
             param_count: 0,
             frame_offset: 0,
             local_size: 0,
-            free_registers: IndexSet::from_iter([
-                ScratchRegister::R0,
-                ScratchRegister::R1,
-                ScratchRegister::R2,
-                ScratchRegister::R3,
-                ScratchRegister::R4,
-                ScratchRegister::R5,
-            ]),
-            free_float_registers: IndexSet::from_iter([
-                FloatRegister::FR0,
-                FloatRegister::FR1,
-                FloatRegister::FR2,
-                FloatRegister::FR3,
-                FloatRegister::FR4,
-                FloatRegister::FR5,
-            ]),
+            free_registers,
+            free_float_registers,
             globals: vec![],
             memory: None,
             functions: vec![],
@@ -314,14 +321,17 @@ impl Function {
             StackValue::Register(reg) => self.free_register(*reg),
             StackValue::FloatRegister(reg) => self.free_float_register(*reg),
             _ => {}
-        }
+        };
         Ok(val)
     }
 
     /// Allocate a scratch register, spilling if necessary
     fn alloc_register(&mut self, emitter: &mut Emitter) -> Result<ScratchRegister, CompileError> {
-        if let Some(reg) = self.free_registers.pop() {
-            Ok(reg)
+        // Find first free register
+        if let Some(idx) = self.free_registers.iter_ones().next() {
+            self.free_registers.set(idx, false);
+            // Convert index to ScratchRegister
+            Ok(unsafe { core::mem::transmute(idx as i32) })
         } else {
             for sv in self.stack.iter_mut() {
                 if let StackValue::Register(reg) = sv {
@@ -339,9 +349,7 @@ impl Function {
 
     #[inline(always)]
     fn free_register(&mut self, reg: ScratchRegister) {
-        if !self.free_registers.contains(&reg) {
-            self.free_registers.insert(reg);
-        }
+        self.free_registers.set(reg as usize, true);
     }
 
     /// Allocate a float register, spilling if necessary
@@ -349,8 +357,11 @@ impl Function {
         &mut self,
         emitter: &mut Emitter,
     ) -> Result<FloatRegister, CompileError> {
-        if let Some(reg) = self.free_float_registers.pop() {
-            Ok(reg)
+        // Find first free float register
+        if let Some(idx) = self.free_float_registers.iter_ones().next() {
+            self.free_float_registers.set(idx, false);
+            // Convert index to FloatRegister
+            Ok(unsafe { core::mem::transmute(idx as i32) })
         } else {
             // Try to spill a float register from the stack
             for sv in self.stack.iter_mut() {
@@ -369,9 +380,7 @@ impl Function {
 
     #[inline(always)]
     fn free_float_register(&mut self, reg: FloatRegister) {
-        if !self.free_float_registers.contains(&reg) {
-            self.free_float_registers.insert(reg);
-        }
+        self.free_float_registers.set(reg as usize, true);
     }
 
     #[inline(always)]
@@ -389,7 +398,7 @@ impl Function {
             StackValue::Register(reg) => {
                 // The register may have been freed by pop_value, so we need to
                 // remove it from the free list to prevent it from being allocated again
-                self.free_registers.retain(|&r| r != reg);
+                self.free_registers.set(reg as usize, false);
                 Ok(reg)
             }
             StackValue::Stack(offset) => {
@@ -425,7 +434,7 @@ impl Function {
         match value {
             StackValue::FloatRegister(reg) => {
                 // Remove from free list to prevent reallocation
-                self.free_float_registers.retain(|&r| r != reg);
+                self.free_float_registers.set(reg as usize, false);
                 Ok(reg)
             }
             StackValue::Stack(offset) => {
@@ -1618,9 +1627,8 @@ impl Function {
             DivOp::RemS | DivOp::RemU => (ScratchRegister::R1, ScratchRegister::R0),
         };
 
-        self.free_registers.retain(|&r| r != other_reg);
-        self.free_registers.insert(other_reg);
-        self.free_registers.retain(|&r| r != result_reg);
+        self.free_registers.set(other_reg as usize, true);
+        self.free_registers.set(result_reg as usize, false);
         self.push(StackValue::Register(result_reg));
         Ok(())
     }
@@ -2519,9 +2527,8 @@ impl Function {
             DivOp::RemS | DivOp::RemU => (ScratchRegister::R1, ScratchRegister::R0),
         };
 
-        self.free_registers.retain(|&r| r != other_reg);
-        self.free_registers.insert(other_reg);
-        self.free_registers.retain(|&r| r != result_reg);
+        self.free_register(other_reg);
+        self.free_registers.set(result_reg as usize, false);
         self.push(StackValue::Register(result_reg));
         Ok(())
     }
@@ -3413,7 +3420,7 @@ impl Function {
         self.free_register(addr_reg);
 
         // Result is in R0
-        self.free_registers.retain(|&r| r != ScratchRegister::R0);
+        self.free_registers.set(ScratchRegister::R0 as usize, false);
         self.push(StackValue::Register(ScratchRegister::R0));
         Ok(())
     }
@@ -3516,7 +3523,7 @@ impl Function {
 
         // Handle result
         if result_count > 0 {
-            self.free_registers.retain(|&r| r != ScratchRegister::R0);
+            self.free_registers.set(ScratchRegister::R0 as usize, false);
             self.push(StackValue::Register(ScratchRegister::R0));
         }
 
@@ -3656,7 +3663,7 @@ impl Function {
 
         // Handle result
         if result_count > 0 {
-            self.free_registers.retain(|&r| r != ScratchRegister::R0);
+            self.free_registers.set(ScratchRegister::R0 as usize, false);
             self.push(StackValue::Register(ScratchRegister::R0));
         }
 
@@ -3859,31 +3866,6 @@ impl<'a> Module<'a> {
                         let data = data?;
                     }
                 }
-                wasmparser::Payload::ModuleSection {
-                    parser,
-                    unchecked_range,
-                } => todo!(),
-                wasmparser::Payload::InstanceSection(section_limited) => {
-                    for instance in section_limited {
-                        let instance = instance?;
-                    }
-                }
-                wasmparser::Payload::CoreTypeSection(section_limited) => {
-                    for core_type in section_limited {
-                        let core_type = core_type?;
-                    }
-                }
-                wasmparser::Payload::ComponentSection {
-                    parser,
-                    unchecked_range,
-                } => todo!(),
-                wasmparser::Payload::ComponentInstanceSection(section_limited) => todo!(),
-                wasmparser::Payload::ComponentAliasSection(section_limited) => todo!(),
-                wasmparser::Payload::ComponentTypeSection(section_limited) => todo!(),
-                wasmparser::Payload::ComponentCanonicalSection(section_limited) => todo!(),
-                wasmparser::Payload::ComponentStartSection { start, range } => todo!(),
-                wasmparser::Payload::ComponentImportSection(section_limited) => todo!(),
-                wasmparser::Payload::ComponentExportSection(section_limited) => todo!(),
                 wasmparser::Payload::CustomSection(custom_section_reader) => todo!(),
                 wasmparser::Payload::UnknownSection {
                     id,
