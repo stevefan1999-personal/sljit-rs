@@ -7,7 +7,8 @@
 
 use indexmap::IndexSet;
 use sljit::sys::{
-    self, Compiler, GeneratedCode, SLJIT_ARG_TYPE_F32, SLJIT_ARG_TYPE_F64, arg_types,
+    self, Compiler, GeneratedCode, SLJIT_ARG_TYPE_F32, SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_W,
+    arg_types,
 };
 use sljit::{
     Condition, Emitter, FloatRegister, JumpType, Operand, ReturnOp, SavedRegister, ScratchRegister,
@@ -141,25 +142,12 @@ impl StackValue {
     }
 }
 
-/// Block type for control flow
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-enum BlockKind {
-    Block,
-    Loop,
-    If,
-}
-
 /// Information about a control flow block
 struct Block {
-    #[allow(dead_code)]
-    kind: BlockKind,
     label: Option<sys::Label>,
     end_jumps: Vec<sys::Jump>,
     else_jump: Option<sys::Jump>,
     stack_depth: usize,
-    #[allow(dead_code)]
-    result_count: usize,
     result_offset: Option<i32>,
 }
 
@@ -168,6 +156,55 @@ struct Block {
 enum LocalVar {
     Saved(SavedRegister),
     Stack(i32),
+}
+
+/// Global variable info
+#[derive(Clone, Debug)]
+pub struct GlobalInfo {
+    /// Pointer to the global's memory location
+    pub ptr: usize,
+    /// Whether the global is mutable
+    pub mutable: bool,
+    /// Value type of the global
+    pub val_type: ValType,
+}
+
+/// Memory instance info
+#[derive(Clone, Debug)]
+pub struct MemoryInfo {
+    /// Pointer to the memory data
+    pub data_ptr: usize,
+    /// Pointer to the current size (in pages)
+    pub size_ptr: usize,
+    /// Maximum size in pages (if specified)
+    pub max_pages: Option<u32>,
+    /// Memory grow callback: fn(current_pages: u32, delta: u32) -> i32 (returns -1 on failure, new size on success)
+    pub grow_callback: Option<extern "C" fn(current_pages: u32, delta: u32) -> i32>,
+}
+
+/// Function signature for calls
+#[derive(Clone, Debug)]
+pub struct FuncType {
+    pub params: Vec<ValType>,
+    pub results: Vec<ValType>,
+}
+
+/// Compiled function entry for direct calls
+#[derive(Clone, Debug)]
+pub struct FunctionEntry {
+    /// Pointer to the compiled function code
+    pub code_ptr: usize,
+    /// Function type
+    pub func_type: FuncType,
+}
+
+/// Table entry for indirect calls
+#[derive(Clone, Debug)]
+pub struct TableEntry {
+    /// Pointer to the table data (array of function pointers)
+    pub data_ptr: usize,
+    /// Current table size
+    pub size: u32,
 }
 
 /// WebAssembly function compiler
@@ -180,6 +217,16 @@ pub struct WasmCompiler {
     local_size: i32,
     free_registers: IndexSet<ScratchRegister>,
     free_float_registers: IndexSet<FloatRegister>,
+    /// Global variables
+    globals: Vec<GlobalInfo>,
+    /// Memory instance
+    memory: Option<MemoryInfo>,
+    /// Function table for direct calls
+    functions: Vec<FunctionEntry>,
+    /// Tables for indirect calls
+    tables: Vec<TableEntry>,
+    /// Function types for call_indirect
+    func_types: Vec<FuncType>,
 }
 
 // Helper macro for stack underflow error
@@ -192,9 +239,9 @@ macro_rules! stack_underflow {
 impl WasmCompiler {
     pub fn new() -> Self {
         Self {
-            stack: Vec::new(),
-            blocks: Vec::new(),
-            locals: Vec::new(),
+            stack: vec![],
+            blocks: vec![],
+            locals: vec![],
             param_count: 0,
             frame_offset: 0,
             local_size: 0,
@@ -208,7 +255,37 @@ impl WasmCompiler {
                 FloatRegister::FR1,
                 FloatRegister::FR2,
             ]),
+            globals: vec![],
+            memory: None,
+            functions: vec![],
+            tables: vec![],
+            func_types: vec![],
         }
+    }
+
+    /// Set globals for the compiler
+    pub fn set_globals(&mut self, globals: Vec<GlobalInfo>) {
+        self.globals = globals;
+    }
+
+    /// Set memory instance for the compiler
+    pub fn set_memory(&mut self, memory: MemoryInfo) {
+        self.memory = Some(memory);
+    }
+
+    /// Set function table for direct calls
+    pub fn set_functions(&mut self, functions: Vec<FunctionEntry>) {
+        self.functions = functions;
+    }
+
+    /// Set tables for indirect calls
+    pub fn set_tables(&mut self, tables: Vec<TableEntry>) {
+        self.tables = tables;
+    }
+
+    /// Set function types for call_indirect
+    pub fn set_func_types(&mut self, func_types: Vec<FuncType>) {
+        self.func_types = func_types;
     }
 
     /// Pop a value from stack with error handling
@@ -225,20 +302,20 @@ impl WasmCompiler {
     /// Allocate a scratch register, spilling if necessary
     fn alloc_register(&mut self, emitter: &mut Emitter) -> Result<ScratchRegister, CompileError> {
         if let Some(reg) = self.free_registers.pop() {
-            return Ok(reg);
-        }
-
-        for sv in self.stack.iter_mut() {
-            if let StackValue::Register(reg) = sv {
-                let offset = self.frame_offset;
-                self.frame_offset += 8;
-                emitter.mov(0, mem_sp_offset(offset), *reg)?;
-                let freed_reg = *reg;
-                *sv = StackValue::Stack(offset);
-                return Ok(freed_reg);
+            Ok(reg)
+        } else {
+            for sv in self.stack.iter_mut() {
+                if let StackValue::Register(reg) = sv {
+                    let offset = self.frame_offset;
+                    self.frame_offset += 8;
+                    emitter.mov(0, mem_sp_offset(offset), *reg)?;
+                    let freed_reg = *reg;
+                    *sv = StackValue::Stack(offset);
+                    return Ok(freed_reg);
+                }
             }
+            Err(CompileError::Invalid("No registers available".into()))
         }
-        Err(CompileError::Invalid("No registers available".into()))
     }
 
     fn free_register(&mut self, reg: ScratchRegister) {
@@ -253,21 +330,21 @@ impl WasmCompiler {
         emitter: &mut Emitter,
     ) -> Result<FloatRegister, CompileError> {
         if let Some(reg) = self.free_float_registers.pop() {
-            return Ok(reg);
-        }
-
-        // Try to spill a float register from the stack
-        for sv in self.stack.iter_mut() {
-            if let StackValue::FloatRegister(reg) = sv {
-                let offset = self.frame_offset;
-                self.frame_offset += 8;
-                emitter.mov_f64(0, mem_sp_offset(offset), *reg)?;
-                let freed_reg = *reg;
-                *sv = StackValue::Stack(offset);
-                return Ok(freed_reg);
+            Ok(reg)
+        } else {
+            // Try to spill a float register from the stack
+            for sv in self.stack.iter_mut() {
+                if let StackValue::FloatRegister(reg) = sv {
+                    let offset = self.frame_offset;
+                    self.frame_offset += 8;
+                    emitter.mov_f64(0, mem_sp_offset(offset), *reg)?;
+                    let freed_reg = *reg;
+                    *sv = StackValue::Stack(offset);
+                    return Ok(freed_reg);
+                }
             }
+            Err(CompileError::Invalid("No float registers available".into()))
         }
-        Err(CompileError::Invalid("No float registers available".into()))
     }
 
     fn free_float_register(&mut self, reg: FloatRegister) {
@@ -341,38 +418,30 @@ impl WasmCompiler {
             StackValue::ConstF32(bits) => {
                 let reg = self.alloc_float_register(emitter)?;
                 // Store float bits to stack, then load as float
-                let gp_reg = self.alloc_register(emitter)?;
                 // Ensure 8-byte alignment for float operations
                 let temp_offset = (self.frame_offset + 7) & !7;
                 self.frame_offset = temp_offset + 8;
-                emitter.mov(0, gp_reg, bits as i32)?;
-                emitter.mov32(0, mem_sp_offset(temp_offset), gp_reg)?;
+                emitter.mov32(0, mem_sp_offset(temp_offset), bits as i32)?;
                 emitter.mov_f32(0, reg, mem_sp_offset(temp_offset))?;
-                self.free_register(gp_reg);
                 Ok(reg)
             }
             StackValue::ConstF64(bits) => {
                 let reg = self.alloc_float_register(emitter)?;
                 // Store float bits to stack, then load as float
-                let gp_reg = self.alloc_register(emitter)?;
                 // Ensure 8-byte alignment for f64 operations
                 let temp_offset = (self.frame_offset + 7) & !7;
                 self.frame_offset = temp_offset + 8;
                 #[cfg(target_pointer_width = "64")]
                 {
-                    emitter.mov(0, gp_reg, bits as isize)?;
-                    emitter.mov(0, mem_sp_offset(temp_offset), gp_reg)?;
+                    emitter.mov(0, mem_sp_offset(temp_offset), bits as isize)?;
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
                     // On 32-bit, need to store two halves
-                    emitter.mov(0, gp_reg, (bits & 0xFFFFFFFF) as i32)?;
-                    emitter.mov32(0, mem_sp_offset(temp_offset), gp_reg)?;
-                    emitter.mov(0, gp_reg, (bits >> 32) as i32)?;
-                    emitter.mov32(0, mem_sp_offset(temp_offset + 4), gp_reg)?;
+                    emitter.mov32(0, mem_sp_offset(temp_offset), (bits & 0xFFFFFFFF) as i32)?;
+                    emitter.mov32(0, mem_sp_offset(temp_offset + 4), (bits >> 32) as i32)?;
                 }
                 emitter.mov_f64(0, reg, mem_sp_offset(temp_offset))?;
-                self.free_register(gp_reg);
                 Ok(reg)
             }
             _ => Err(CompileError::Invalid(
@@ -446,10 +515,7 @@ impl WasmCompiler {
         match (local, val) {
             (LocalVar::Saved(sreg), _) => self.emit_mov_to_saved(emitter, *sreg, val),
             (LocalVar::Stack(offset), StackValue::Const(v)) => {
-                let reg = self.alloc_register(emitter)?;
-                emitter.mov(0, reg, *v)?;
-                emitter.mov(0, mem_sp_offset(*offset), reg)?;
-                self.free_register(reg);
+                emitter.mov(0, mem_sp_offset(*offset), *v)?;
                 Ok(())
             }
             (LocalVar::Stack(offset), StackValue::Register(reg)) => {
@@ -471,28 +537,20 @@ impl WasmCompiler {
             }
             (LocalVar::Stack(offset), StackValue::ConstF32(bits)) => {
                 // Store f32 constant to stack
-                let reg = self.alloc_register(emitter)?;
-                emitter.mov(0, reg, *bits as i32)?;
-                emitter.mov32(0, mem_sp_offset(*offset), reg)?;
-                self.free_register(reg);
+                emitter.mov32(0, mem_sp_offset(*offset), *bits as i32)?;
                 Ok(())
             }
             (LocalVar::Stack(offset), StackValue::ConstF64(bits)) => {
                 // Store f64 constant to stack
-                let reg = self.alloc_register(emitter)?;
                 #[cfg(target_pointer_width = "64")]
                 {
-                    emitter.mov(0, reg, *bits as isize)?;
-                    emitter.mov(0, mem_sp_offset(*offset), reg)?;
+                    emitter.mov(0, mem_sp_offset(*offset), *bits as isize)?;
                 }
                 #[cfg(not(target_pointer_width = "64"))]
                 {
-                    emitter.mov(0, reg, (*bits & 0xFFFFFFFF) as i32)?;
-                    emitter.mov32(0, mem_sp_offset(*offset), reg)?;
-                    emitter.mov(0, reg, (*bits >> 32) as i32)?;
-                    emitter.mov32(0, mem_sp_offset(*offset + 4), reg)?;
+                    emitter.mov32(0, mem_sp_offset(*offset), (*bits & 0xFFFFFFFF) as i32)?;
+                    emitter.mov32(0, mem_sp_offset(*offset + 4), (*bits >> 32) as i32)?;
                 }
-                self.free_register(reg);
                 Ok(())
             }
         }
@@ -500,24 +558,19 @@ impl WasmCompiler {
 
     /// Save all register values to stack (for control flow)
     fn save_all_to_stack(&mut self, emitter: &mut Emitter) -> Result<(), CompileError> {
-        let saves: Vec<_> = self
+        for (i, reg) in self
             .stack
-            .iter()
+            .clone()
+            .into_iter()
             .enumerate()
             .filter_map(|(i, sv)| {
-                matches!(sv, StackValue::Register(reg) if true)
-                    .then(|| {
-                        if let StackValue::Register(reg) = sv {
-                            Some((i, *reg))
-                        } else {
-                            None
-                        }
-                    })
-                    .flatten()
+                if let StackValue::Register(reg) = sv {
+                    Some((i, reg))
+                } else {
+                    None
+                }
             })
-            .collect();
-
-        for (i, reg) in saves {
+        {
             let offset = self.frame_offset;
             self.frame_offset += 8;
             emitter.mov(0, mem_sp_offset(offset), reg)?;
@@ -528,7 +581,7 @@ impl WasmCompiler {
     }
 
     /// Create a new block with common initialization
-    fn new_block(&mut self, kind: BlockKind, label: Option<sys::Label>, has_result: bool) -> Block {
+    fn new_block(&mut self, label: Option<sys::Label>, has_result: bool) -> Block {
         let result_offset = if has_result {
             let offset = self.frame_offset;
             self.frame_offset += 8;
@@ -538,12 +591,10 @@ impl WasmCompiler {
         };
 
         Block {
-            kind,
             label,
-            end_jumps: Vec::new(),
+            end_jumps: vec![],
             else_jump: None,
             stack_depth: self.stack.len(),
-            result_count: if has_result { 1 } else { 0 },
             result_offset,
         }
     }
@@ -554,19 +605,34 @@ impl WasmCompiler {
     }
 
     /// Make argument types bitmask for sljit
+    /// Supports up to 7 arguments (with 32-bit arg_types bitmask)
     fn make_arg_types(params: &[ValType], results: &[ValType]) -> i32 {
         let ret_type = if results.is_empty() {
             sys::SLJIT_ARG_TYPE_RET_VOID
         } else {
             sys::SLJIT_ARG_TYPE_W
         };
+        // Encode up to 7 arguments (bits 4-31 = 7 slots of 4 bits each)
         params
             .iter()
-            .take(3)
+            .take(7)
             .enumerate()
             .fold(ret_type, |acc, (i, _)| {
                 acc | (sys::SLJIT_ARG_TYPE_W << (4 * (i + 1)))
             })
+    }
+
+    /// Get the stack space needed for extra arguments (arguments beyond the first 3)
+    fn get_extra_arg_stack_size(param_count: usize) -> i32 {
+        if param_count <= 3 {
+            0
+        } else {
+            // Each extra argument needs 8 bytes (word size on 64-bit)
+            // Align to 16 bytes for ABI compliance
+            let extra_args = param_count - 3;
+            let size = (extra_args * 8) as i32;
+            (size + 15) & !15 // 16-byte alignment
+        }
     }
 
     /// Compile a WebAssembly function
@@ -629,12 +695,10 @@ impl WasmCompiler {
         }
 
         self.blocks.push(Block {
-            kind: BlockKind::Block,
             label: None,
-            end_jumps: Vec::new(),
+            end_jumps: vec![],
             else_jump: None,
             stack_depth: 0,
-            result_count: results.len(),
             result_offset: None,
         });
 
@@ -743,7 +807,7 @@ impl WasmCompiler {
             // Control flow
             Operator::Block { blockty } => {
                 self.save_all_to_stack(emitter)?;
-                let block = self.new_block(BlockKind::Block, None, Self::block_has_result(blockty));
+                let block = self.new_block(None, Self::block_has_result(blockty));
                 self.blocks.push(block);
                 Ok(())
             }
@@ -751,7 +815,7 @@ impl WasmCompiler {
             Operator::Loop { blockty: _ } => {
                 self.save_all_to_stack(emitter)?;
                 let label = emitter.put_label()?;
-                let block = self.new_block(BlockKind::Loop, Some(label), false);
+                let block = self.new_block(Some(label), false);
                 self.blocks.push(block);
                 Ok(())
             }
@@ -760,8 +824,7 @@ impl WasmCompiler {
                 let cond = self.pop_value()?;
                 self.save_all_to_stack(emitter)?;
                 let jump = self.emit_cond_jump(emitter, cond, Condition::Equal)?;
-                let mut block =
-                    self.new_block(BlockKind::If, None, Self::block_has_result(blockty));
+                let mut block = self.new_block(None, Self::block_has_result(blockty));
                 block.else_jump = Some(jump);
                 self.blocks.push(block);
                 Ok(())
@@ -776,11 +839,11 @@ impl WasmCompiler {
                     (block.result_offset, block.stack_depth)
                 };
 
-                if let Some(offset) = result_offset {
-                    if self.stack.len() > stack_depth {
-                        let val = self.stack.pop().unwrap();
-                        self.emit_mov_to_stack_offset(emitter, offset, val)?;
-                    }
+                if let Some(offset) = result_offset
+                    && self.stack.len() > stack_depth
+                {
+                    let val = self.stack.pop().unwrap();
+                    self.emit_mov_to_stack_offset(emitter, offset, val)?;
                 }
 
                 let jump_to_end = emitter.jump(JumpType::Jump)?;
@@ -1214,6 +1277,24 @@ impl WasmCompiler {
                 }
             }
 
+            // Global variable operations
+            Operator::GlobalGet { global_index } => self.compile_global_get(emitter, *global_index),
+            Operator::GlobalSet { global_index } => self.compile_global_set(emitter, *global_index),
+
+            // Memory operations
+            Operator::MemorySize { mem, .. } => self.compile_memory_size(emitter, *mem),
+            Operator::MemoryGrow { mem, .. } => self.compile_memory_grow(emitter, *mem),
+
+            // Function calls
+            Operator::Call { function_index } => self.compile_call(emitter, *function_index),
+            Operator::CallIndirect {
+                type_index,
+                table_index,
+            } => self.compile_call_indirect(emitter, *type_index, *table_index),
+
+            // Branch table
+            Operator::BrTable { targets } => self.compile_br_table(emitter, targets),
+
             _ => Err(CompileError::Unsupported(format!(
                 "Unsupported operator: {:?}",
                 op
@@ -1235,12 +1316,7 @@ impl WasmCompiler {
                 Ok(j)
             }
             StackValue::Saved(sreg) => Ok(emitter.cmp(condition, sreg, 0i32)?),
-            _ => {
-                let reg = self.ensure_in_register(emitter, cond)?;
-                let j = emitter.cmp(condition, reg, 0i32)?;
-                self.free_register(reg);
-                Ok(j)
-            }
+            _ => Ok(emitter.cmp(condition, cond.to_operand(), 0i32)?),
         }
     }
 
@@ -1296,24 +1372,23 @@ impl WasmCompiler {
     ) -> Result<(), CompileError> {
         let block_idx = self.blocks.len() - 1 - relative_depth as usize;
 
-        if let Some(result_offset) = self.blocks[block_idx].result_offset {
-            if let Some(val) = self.stack.pop() {
-                if let StackValue::Register(reg) = &val {
-                    self.free_register(*reg);
-                }
-                self.emit_mov_to_stack_offset(emitter, result_offset, val)?;
+        if let Some(result_offset) = self.blocks[block_idx].result_offset
+            && let Some(val) = self.stack.pop()
+        {
+            if let StackValue::Register(reg) = &val {
+                self.free_register(*reg);
             }
+            self.emit_mov_to_stack_offset(emitter, result_offset, val)?;
         }
+
         self.save_all_to_stack(emitter)?;
 
-        let label_clone = self.blocks[block_idx].label;
-        if let Some(mut label) = label_clone {
-            let mut jump = emitter.jump(JumpType::Jump)?;
+        let mut jump = emitter.jump(JumpType::Jump)?;
+
+        if let Some(mut label) = self.blocks[block_idx].label {
             jump.set_label(&mut label);
         } else {
-            self.blocks[block_idx]
-                .end_jumps
-                .push(emitter.jump(JumpType::Jump)?);
+            self.blocks[block_idx].end_jumps.push(jump);
         }
         Ok(())
     }
@@ -1327,12 +1402,10 @@ impl WasmCompiler {
         self.save_all_to_stack(emitter)?;
 
         let block_idx = self.blocks.len() - 1 - relative_depth as usize;
-        let label_clone = self.blocks[block_idx].label;
-        let jump = self.emit_cond_jump(emitter, cond, Condition::NotEqual)?;
+        let mut jump = self.emit_cond_jump(emitter, cond, Condition::NotEqual)?;
 
-        if let Some(mut label) = label_clone {
-            let mut j = jump;
-            j.set_label(&mut label);
+        if let Some(mut label) = self.blocks[block_idx].label {
+            jump.set_label(&mut label);
         } else {
             self.blocks[block_idx].end_jumps.push(jump);
         }
@@ -1350,40 +1423,18 @@ impl WasmCompiler {
         let operand_b = b.to_operand();
 
         match op {
-            BinaryOp::Add => {
-                emitter.add32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Sub => {
-                emitter.sub32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Mul => {
-                emitter.mul32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::And => {
-                emitter.and32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Or => {
-                emitter.or32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Xor => {
-                emitter.xor32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Shl => {
-                emitter.shl32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::ShrS => {
-                emitter.ashr32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::ShrU => {
-                emitter.lshr32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Rotl => {
-                emitter.rotl32(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Rotr => {
-                emitter.rotr32(0, reg_a, reg_a, operand_b)?;
-            }
-        }
+            BinaryOp::Add => emitter.add32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Sub => emitter.sub32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Mul => emitter.mul32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::And => emitter.and32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Or => emitter.or32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Xor => emitter.xor32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Shl => emitter.shl32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::ShrS => emitter.ashr32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::ShrU => emitter.lshr32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Rotl => emitter.rotl32(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Rotr => emitter.rotr32(0, reg_a, reg_a, operand_b)?,
+        };
 
         if let StackValue::Register(reg_b) = b {
             self.free_register(reg_b);
@@ -1505,42 +1556,38 @@ impl WasmCompiler {
         let addr = self.pop_value()?;
         let addr_reg = self.ensure_in_register(emitter, addr)?;
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+        let mem = mem_offset(addr_reg, offset);
 
         match kind {
             LoadStoreKind::I32 => {
-                emitter.mov32(0, addr_reg, mem_offset(addr_reg, offset))?;
-                self.push(StackValue::Register(addr_reg));
+                emitter.mov32(0, addr_reg, mem)?;
             }
             LoadStoreKind::I8S => {
-                emitter.mov_s8(0, addr_reg, mem_offset(addr_reg, offset))?;
-                self.push(StackValue::Register(addr_reg));
+                emitter.mov_s8(0, addr_reg, mem)?;
             }
             LoadStoreKind::I8U => {
-                emitter.mov_u8(0, addr_reg, mem_offset(addr_reg, offset))?;
-                self.push(StackValue::Register(addr_reg));
+                emitter.mov_u8(0, addr_reg, mem)?;
             }
             LoadStoreKind::I16S => {
-                emitter.mov_s16(0, addr_reg, mem_offset(addr_reg, offset))?;
-                self.push(StackValue::Register(addr_reg));
+                emitter.mov_s16(0, addr_reg, mem)?;
             }
             LoadStoreKind::I16U => {
-                emitter.mov_u16(0, addr_reg, mem_offset(addr_reg, offset))?;
-                self.push(StackValue::Register(addr_reg));
+                emitter.mov_u16(0, addr_reg, mem)?;
             }
-            LoadStoreKind::F32 => {
+            LoadStoreKind::F32 | LoadStoreKind::F64 => {
                 let freg = self.alloc_float_register(emitter)?;
-                emitter.mov_f32(0, freg, mem_offset(addr_reg, offset))?;
+                if matches!(kind, LoadStoreKind::F32) {
+                    emitter.mov_f32(0, freg, mem)?;
+                } else {
+                    emitter.mov_f64(0, freg, mem)?;
+                }
                 self.free_register(addr_reg);
                 self.push(StackValue::FloatRegister(freg));
-            }
-            LoadStoreKind::F64 => {
-                let freg = self.alloc_float_register(emitter)?;
-                emitter.mov_f64(0, freg, mem_offset(addr_reg, offset))?;
-                self.free_register(addr_reg);
-                self.push(StackValue::FloatRegister(freg));
+                return Ok(());
             }
             _ => unreachable!("I64 variants handled by compile_load_op64"),
         }
+        self.push(StackValue::Register(addr_reg));
         Ok(())
     }
 
@@ -1550,47 +1597,40 @@ impl WasmCompiler {
         offset: i32,
         kind: LoadStoreKind,
     ) -> Result<(), CompileError> {
+        let (value, addr) = (self.pop_value()?, self.pop_value()?);
+        let addr_reg = self.ensure_in_register(emitter, addr)?;
+        emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+        let mem = mem_offset(addr_reg, offset);
+
         match kind {
             LoadStoreKind::F32 | LoadStoreKind::F64 => {
-                let (value, addr) = (self.pop_value()?, self.pop_value()?);
                 let is_f32 = matches!(kind, LoadStoreKind::F32);
                 let freg = self.ensure_in_float_register(emitter, value, is_f32)?;
-                let addr_reg = self.ensure_in_register(emitter, addr)?;
-                emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
-
                 if is_f32 {
-                    emitter.mov_f32(0, mem_offset(addr_reg, offset), freg)?;
+                    emitter.mov_f32(0, mem, freg)?;
                 } else {
-                    emitter.mov_f64(0, mem_offset(addr_reg, offset), freg)?;
+                    emitter.mov_f64(0, mem, freg)?;
                 }
-
                 self.free_float_register(freg);
-                self.free_register(addr_reg);
             }
             _ => {
-                let (value, addr) = (self.pop_value()?, self.pop_value()?);
-                let (value_reg, addr_reg) = (
-                    self.ensure_in_register(emitter, value)?,
-                    self.ensure_in_register(emitter, addr)?,
-                );
-                emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
-
+                let value_reg = self.ensure_in_register(emitter, value)?;
                 match kind {
                     LoadStoreKind::I32 => {
-                        emitter.mov32(0, mem_offset(addr_reg, offset), value_reg)?;
+                        emitter.mov32(0, mem, value_reg)?;
                     }
                     LoadStoreKind::I8U | LoadStoreKind::I8S => {
-                        emitter.mov_u8(0, mem_offset(addr_reg, offset), value_reg)?;
+                        emitter.mov_u8(0, mem, value_reg)?;
                     }
                     LoadStoreKind::I16U | LoadStoreKind::I16S => {
-                        emitter.mov_u16(0, mem_offset(addr_reg, offset), value_reg)?;
+                        emitter.mov_u16(0, mem, value_reg)?;
                     }
                     _ => unreachable!("I64 variants handled by compile_store_op64"),
                 }
                 self.free_register(value_reg);
-                self.free_register(addr_reg);
             }
         }
+        self.free_register(addr_reg);
         Ok(())
     }
 
@@ -1605,40 +1645,18 @@ impl WasmCompiler {
         let operand_b = b.to_operand();
 
         match op {
-            BinaryOp::Add => {
-                emitter.add(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Sub => {
-                emitter.sub(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Mul => {
-                emitter.mul(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::And => {
-                emitter.and(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Or => {
-                emitter.or(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Xor => {
-                emitter.xor(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Shl => {
-                emitter.shl(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::ShrS => {
-                emitter.ashr(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::ShrU => {
-                emitter.lshr(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Rotl => {
-                emitter.rotl(0, reg_a, reg_a, operand_b)?;
-            }
-            BinaryOp::Rotr => {
-                emitter.rotr(0, reg_a, reg_a, operand_b)?;
-            }
-        }
+            BinaryOp::Add => emitter.add(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Sub => emitter.sub(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Mul => emitter.mul(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::And => emitter.and(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Or => emitter.or(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Xor => emitter.xor(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Shl => emitter.shl(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::ShrS => emitter.ashr(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::ShrU => emitter.lshr(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Rotl => emitter.rotl(0, reg_a, reg_a, operand_b)?,
+            BinaryOp::Rotr => emitter.rotr(0, reg_a, reg_a, operand_b)?,
+        };
 
         if let StackValue::Register(reg_b) = b {
             self.free_register(reg_b);
@@ -1810,28 +1828,29 @@ impl WasmCompiler {
         let addr = self.pop_value()?;
         let addr_reg = self.ensure_in_register(emitter, addr)?;
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+        let mem = mem_offset(addr_reg, offset);
 
         match kind {
             LoadStoreKind::I64 => {
-                emitter.mov(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_8S => {
-                emitter.mov_s8(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_s8(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_8U => {
-                emitter.mov_u8(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_u8(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_16S => {
-                emitter.mov_s16(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_s16(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_16U => {
-                emitter.mov_u16(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_u16(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_32S => {
-                emitter.mov_s32(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_s32(0, addr_reg, mem)?;
             }
             LoadStoreKind::I64_32U => {
-                emitter.mov_u32(0, addr_reg, mem_offset(addr_reg, offset))?;
+                emitter.mov_u32(0, addr_reg, mem)?;
             }
             _ => unreachable!(),
         }
@@ -1864,19 +1883,20 @@ impl WasmCompiler {
             self.ensure_in_register(emitter, addr)?,
         );
         emitter.add(0, addr_reg, addr_reg, SavedRegister::S0)?;
+        let mem = mem_offset(addr_reg, offset);
 
         match kind {
             LoadStoreKind::I64 => {
-                emitter.mov(0, mem_offset(addr_reg, offset), value_reg)?;
+                emitter.mov(0, mem, value_reg)?;
             }
             LoadStoreKind::I64_8U => {
-                emitter.mov_u8(0, mem_offset(addr_reg, offset), value_reg)?;
+                emitter.mov_u8(0, mem, value_reg)?;
             }
             LoadStoreKind::I64_16U => {
-                emitter.mov_u16(0, mem_offset(addr_reg, offset), value_reg)?;
+                emitter.mov_u16(0, mem, value_reg)?;
             }
             LoadStoreKind::I64_32U => {
-                emitter.mov32(0, mem_offset(addr_reg, offset), value_reg)?;
+                emitter.mov32(0, mem, value_reg)?;
             }
             _ => unreachable!(),
         }
@@ -1908,114 +1928,72 @@ impl WasmCompiler {
         let freg_a = self.ensure_in_float_register(emitter, a, is_f32)?;
         let freg_b = self.ensure_in_float_register(emitter, b, is_f32)?;
 
-        match (op, is_f32) {
-            (FloatBinaryOp::Add, true) => {
+        match op {
+            FloatBinaryOp::Add if is_f32 => {
                 emitter.add_f32(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Add, false) => {
+            FloatBinaryOp::Add => {
                 emitter.add_f64(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Sub, true) => {
+            FloatBinaryOp::Sub if is_f32 => {
                 emitter.sub_f32(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Sub, false) => {
+            FloatBinaryOp::Sub => {
                 emitter.sub_f64(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Mul, true) => {
+            FloatBinaryOp::Mul if is_f32 => {
                 emitter.mul_f32(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Mul, false) => {
+            FloatBinaryOp::Mul => {
                 emitter.mul_f64(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Div, true) => {
+            FloatBinaryOp::Div if is_f32 => {
                 emitter.div_f32(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Div, false) => {
+            FloatBinaryOp::Div => {
                 emitter.div_f64(0, freg_a, freg_a, freg_b)?;
             }
-            (FloatBinaryOp::Min, true) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f32, y: f32) -> f32 {
+            FloatBinaryOp::Min | FloatBinaryOp::Max | FloatBinaryOp::Copysign => {
+                let func_addr = match (op, is_f32) {
+                    (FloatBinaryOp::Min, true) => {
+                        extern "C" fn f(x: f32, y: f32) -> f32 {
                             x.min(y)
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatBinaryOp::Min, false) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f64, y: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatBinaryOp::Min, false) => {
+                        extern "C" fn f(x: f64, y: f64) -> f64 {
                             x.min(y)
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatBinaryOp::Max, true) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f32, y: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatBinaryOp::Max, true) => {
+                        extern "C" fn f(x: f32, y: f32) -> f32 {
                             x.max(y)
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatBinaryOp::Max, false) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f64, y: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatBinaryOp::Max, false) => {
+                        extern "C" fn f(x: f64, y: f64) -> f64 {
                             x.max(y)
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatBinaryOp::Copysign, true) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f32, y: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatBinaryOp::Copysign, true) => {
+                        extern "C" fn f(x: f32, y: f32) -> f32 {
                             x.copysign(y)
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatBinaryOp::Copysign, false) => {
-                self.emit_float_binary_libm_call(
-                    emitter,
-                    freg_a,
-                    freg_b,
-                    {
-                        extern "C" fn func(x: f64, y: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatBinaryOp::Copysign, false) => {
+                        extern "C" fn f(x: f64, y: f64) -> f64 {
                             x.copysign(y)
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
+                        f as *const () as usize
+                    }
+                    _ => unreachable!(),
+                };
+                self.emit_float_binary_libm_call(emitter, freg_a, freg_b, func_addr, is_f32)?;
             }
         }
 
@@ -2034,149 +2012,85 @@ impl WasmCompiler {
         let val = self.pop_value()?;
         let freg = self.ensure_in_float_register(emitter, val, is_f32)?;
 
-        match (op, is_f32) {
-            (FloatUnaryOp::Neg, true) => {
+        match op {
+            FloatUnaryOp::Neg if is_f32 => {
                 emitter.neg_f32(0, freg, freg)?;
             }
-            (FloatUnaryOp::Neg, false) => {
+            FloatUnaryOp::Neg => {
                 emitter.neg_f64(0, freg, freg)?;
             }
-            (FloatUnaryOp::Abs, true) => {
+            FloatUnaryOp::Abs if is_f32 => {
                 emitter.abs_f32(0, freg, freg)?;
             }
-            (FloatUnaryOp::Abs, false) => {
+            FloatUnaryOp::Abs => {
                 emitter.abs_f64(0, freg, freg)?;
             }
             // For Sqrt, Ceil, Floor, Trunc, Nearest - call C library functions
-            (FloatUnaryOp::Sqrt, true) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f32) -> f32 {
+            _ => {
+                let func_addr = match (op, is_f32) {
+                    (FloatUnaryOp::Sqrt, true) => {
+                        extern "C" fn f(x: f32) -> f32 {
                             x.sqrt()
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatUnaryOp::Sqrt, false) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Sqrt, false) => {
+                        extern "C" fn f(x: f64) -> f64 {
                             x.sqrt()
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatUnaryOp::Ceil, true) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Ceil, true) => {
+                        extern "C" fn f(x: f32) -> f32 {
                             x.ceil()
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatUnaryOp::Ceil, false) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Ceil, false) => {
+                        extern "C" fn f(x: f64) -> f64 {
                             x.ceil()
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatUnaryOp::Floor, true) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Floor, true) => {
+                        extern "C" fn f(x: f32) -> f32 {
                             x.floor()
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatUnaryOp::Floor, false) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Floor, false) => {
+                        extern "C" fn f(x: f64) -> f64 {
                             x.floor()
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatUnaryOp::Trunc, true) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Trunc, true) => {
+                        extern "C" fn f(x: f32) -> f32 {
                             x.trunc()
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatUnaryOp::Trunc, false) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Trunc, false) => {
+                        extern "C" fn f(x: f64) -> f64 {
                             x.trunc()
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
-            }
-            (FloatUnaryOp::Nearest, true) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f32) -> f32 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Nearest, true) => {
+                        extern "C" fn f(x: f32) -> f32 {
                             x.round_ties_even()
                         }
-                        func as *const () as usize
-                    },
-                    true,
-                )?;
-            }
-            (FloatUnaryOp::Nearest, false) => {
-                self.emit_float_libm_call(
-                    emitter,
-                    freg,
-                    {
-                        extern "C" fn func(x: f64) -> f64 {
+                        f as *const () as usize
+                    }
+                    (FloatUnaryOp::Nearest, false) => {
+                        extern "C" fn f(x: f64) -> f64 {
                             x.round_ties_even()
                         }
-                        func as *const () as usize
-                    },
-                    false,
-                )?;
+                        f as *const () as usize
+                    }
+                    _ => unreachable!(),
+                };
+                self.emit_float_libm_call(emitter, freg, func_addr, is_f32)?;
             }
         }
 
@@ -2184,8 +2098,22 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Helper to move float register conditionally based on is_f32
+    fn mov_float(
+        emitter: &mut Emitter,
+        is_f32: bool,
+        dst: impl Into<Operand>,
+        src: impl Into<Operand>,
+    ) -> Result<(), sys::ErrorCode> {
+        if is_f32 {
+            emitter.mov_f32(0, dst, src)?;
+        } else {
+            emitter.mov_f64(0, dst, src)?;
+        }
+        Ok(())
+    }
+
     /// Emit a call to a libm function for float binary operations
-    /// The function takes two float/double arguments and returns float/double
     fn emit_float_binary_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2194,33 +2122,15 @@ impl WasmCompiler {
         func_addr: usize,
         is_f32: bool,
     ) -> Result<(), CompileError> {
-        // For calling C functions with two float arguments:
-        // 1. Move the first float value to FR0 (first float argument register)
-        // 2. Move the second float value to FR1 (second float argument register)
-        // 3. Call the function
-        // 4. Move the result from FR0 to our target register
-
-        // Move inputs to FR0 and FR1
         if freg_a != FloatRegister::FR0 {
-            if is_f32 {
-                emitter.mov_f32(0, FloatRegister::FR0, freg_a)?;
-            } else {
-                emitter.mov_f64(0, FloatRegister::FR0, freg_a)?;
-            }
+            Self::mov_float(emitter, is_f32, FloatRegister::FR0, freg_a)?;
         }
         if freg_b != FloatRegister::FR1 {
-            if is_f32 {
-                emitter.mov_f32(0, FloatRegister::FR1, freg_b)?;
-            } else {
-                emitter.mov_f64(0, FloatRegister::FR1, freg_b)?;
-            }
+            Self::mov_float(emitter, is_f32, FloatRegister::FR1, freg_b)?;
         }
 
-        // Load function address to a register and call
         let addr_reg = self.alloc_register(emitter)?;
         emitter.mov(0, addr_reg, func_addr as isize)?;
-
-        // Make the indirect call - use the appropriate arg types for float functions
         let arg_types = if is_f32 {
             arg_types!([F32, F32] -> F32)
         } else {
@@ -2229,20 +2139,13 @@ impl WasmCompiler {
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
         self.free_register(addr_reg);
 
-        // Move result from FR0 to target register if needed
         if freg_a != FloatRegister::FR0 {
-            if is_f32 {
-                emitter.mov_f32(0, freg_a, FloatRegister::FR0)?;
-            } else {
-                emitter.mov_f64(0, freg_a, FloatRegister::FR0)?;
-            }
+            Self::mov_float(emitter, is_f32, freg_a, FloatRegister::FR0)?;
         }
-
         Ok(())
     }
 
     /// Emit a call to a libm function for float unary operations
-    /// The function takes a float/double argument and returns float/double
     fn emit_float_libm_call(
         &mut self,
         emitter: &mut Emitter,
@@ -2250,25 +2153,12 @@ impl WasmCompiler {
         func_addr: usize,
         is_f32: bool,
     ) -> Result<(), CompileError> {
-        // For calling C functions, we need to:
-        // 1. Move the float value to FR0 (first float argument register)
-        // 2. Call the function
-        // 3. Move the result from FR0 to our target register
-
-        // Move input to FR0 if not already there
         if freg != FloatRegister::FR0 {
-            if is_f32 {
-                emitter.mov_f32(0, FloatRegister::FR0, freg)?;
-            } else {
-                emitter.mov_f64(0, FloatRegister::FR0, freg)?;
-            }
+            Self::mov_float(emitter, is_f32, FloatRegister::FR0, freg)?;
         }
 
-        // Load function address to a register and call
         let addr_reg = self.alloc_register(emitter)?;
         emitter.mov(0, addr_reg, func_addr as isize)?;
-
-        // Make the indirect call - use the appropriate arg types for float functions
         let arg_types = if is_f32 {
             arg_types!([F32] -> F32)
         } else {
@@ -2277,15 +2167,9 @@ impl WasmCompiler {
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
         self.free_register(addr_reg);
 
-        // Move result from FR0 to target register if needed
         if freg != FloatRegister::FR0 {
-            if is_f32 {
-                emitter.mov_f32(0, freg, FloatRegister::FR0)?;
-            } else {
-                emitter.mov_f64(0, freg, FloatRegister::FR0)?;
-            }
+            Self::mov_float(emitter, is_f32, freg, FloatRegister::FR0)?;
         }
-
         Ok(())
     }
 
@@ -2297,23 +2181,18 @@ impl WasmCompiler {
         is_f32: bool,
     ) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
-        let freg_a = self.ensure_in_float_register(emitter, a, is_f32)?;
-        let freg_b = self.ensure_in_float_register(emitter, b, is_f32)?;
+        let (freg_a, freg_b) = (
+            self.ensure_in_float_register(emitter, a, is_f32)?,
+            self.ensure_in_float_register(emitter, b, is_f32)?,
+        );
         let result_reg = self.alloc_register(emitter)?;
 
-        // Use float compare instruction and conditional jump
         let mut jump_true = emitter.fcmp(cond, freg_a, freg_b)?;
-
-        // False path (condition not met)
         emitter.mov(0, result_reg, 0i32)?;
         let mut jump_end = emitter.jump(JumpType::Jump)?;
-
-        // True path (condition met)
         let mut label_true = emitter.put_label()?;
         jump_true.set_label(&mut label_true);
         emitter.mov(0, result_reg, 1i32)?;
-
-        // End
         let mut label_end = emitter.put_label()?;
         jump_end.set_label(&mut label_end);
 
@@ -2324,9 +2203,6 @@ impl WasmCompiler {
     }
 
     /// Convert integer to float
-    /// is_f32: target is f32 (true) or f64 (false)
-    /// is_i32: source is i32 (true) or i64 (false)
-    /// is_signed: signed conversion (true) or unsigned (false)
     fn compile_convert_int_to_float(
         &mut self,
         emitter: &mut Emitter,
@@ -2340,39 +2216,31 @@ impl WasmCompiler {
 
         match (is_f32, is_i32, is_signed) {
             (true, true, true) => {
-                // f32.convert_i32_s
                 emitter.conv_f32_from_s32(0, freg, reg)?;
             }
             (true, true, false) => {
-                // f32.convert_i32_u
                 emitter.conv_f32_from_u32(0, freg, reg)?;
             }
             (false, true, true) => {
-                // f64.convert_i32_s
                 emitter.conv_f64_from_s32(0, freg, reg)?;
             }
             (false, true, false) => {
-                // f64.convert_i32_u
                 emitter.conv_f64_from_u32(0, freg, reg)?;
             }
             #[cfg(target_pointer_width = "64")]
             (true, false, true) => {
-                // f32.convert_i64_s
                 emitter.conv_f32_from_sw(0, freg, reg)?;
             }
             #[cfg(target_pointer_width = "64")]
             (true, false, false) => {
-                // f32.convert_i64_u
                 emitter.conv_f32_from_uw(0, freg, reg)?;
             }
             #[cfg(target_pointer_width = "64")]
             (false, false, true) => {
-                // f64.convert_i64_s
                 emitter.conv_f64_from_sw(0, freg, reg)?;
             }
             #[cfg(target_pointer_width = "64")]
             (false, false, false) => {
-                // f64.convert_i64_u
                 emitter.conv_f64_from_uw(0, freg, reg)?;
             }
             #[cfg(not(target_pointer_width = "64"))]
@@ -2389,61 +2257,35 @@ impl WasmCompiler {
     }
 
     /// Convert float to integer (truncate)
-    /// is_f32: source is f32 (true) or f64 (false)
-    /// is_i32: target is i32 (true) or i64 (false)
-    /// is_signed: signed conversion (true) or unsigned (false)
     fn compile_convert_float_to_int(
         &mut self,
         emitter: &mut Emitter,
         is_f32: bool,
         is_i32: bool,
-        is_signed: bool,
+        _is_signed: bool,
     ) -> Result<(), CompileError> {
         let val = self.pop_value()?;
         let freg = self.ensure_in_float_register(emitter, val, is_f32)?;
         let reg = self.alloc_register(emitter)?;
 
-        match (is_f32, is_i32, is_signed) {
-            (true, true, true) => {
-                // i32.trunc_f32_s
+        // Note: SLJIT doesn't have direct unsigned conversion, use signed for all
+        match (is_f32, is_i32) {
+            (true, true) => {
                 emitter.conv_s32_from_f32(0, reg, freg)?;
             }
-            (true, true, false) => {
-                // i32.trunc_f32_u - SLJIT doesn't have direct unsigned conversion
-                // We use signed conversion which works for positive values within range
-                emitter.conv_s32_from_f32(0, reg, freg)?;
-            }
-            (false, true, true) => {
-                // i32.trunc_f64_s
-                emitter.conv_s32_from_f64(0, reg, freg)?;
-            }
-            (false, true, false) => {
-                // i32.trunc_f64_u - SLJIT doesn't have direct unsigned conversion
-                // We use signed conversion which works for positive values within range
+            (false, true) => {
                 emitter.conv_s32_from_f64(0, reg, freg)?;
             }
             #[cfg(target_pointer_width = "64")]
-            (true, false, true) => {
-                // i64.trunc_f32_s
+            (true, false) => {
                 emitter.conv_sw_from_f32(0, reg, freg)?;
             }
             #[cfg(target_pointer_width = "64")]
-            (true, false, false) => {
-                // i64.trunc_f32_u - SLJIT doesn't have direct unsigned conversion
-                emitter.conv_sw_from_f32(0, reg, freg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (false, false, true) => {
-                // i64.trunc_f64_s
-                emitter.conv_sw_from_f64(0, reg, freg)?;
-            }
-            #[cfg(target_pointer_width = "64")]
-            (false, false, false) => {
-                // i64.trunc_f64_u - SLJIT doesn't have direct unsigned conversion
+            (false, false) => {
                 emitter.conv_sw_from_f64(0, reg, freg)?;
             }
             #[cfg(not(target_pointer_width = "64"))]
-            (_, false, _) => {
+            (_, false) => {
                 return Err(CompileError::Unsupported(
                     "Float to 64-bit int conversion not supported on 32-bit platform".into(),
                 ));
@@ -2456,25 +2298,509 @@ impl WasmCompiler {
     }
 
     /// Compile f32.demote_f64 or f64.promote_f32
-    /// is_demote: true for f32.demote_f64, false for f64.promote_f32
     fn compile_float_demote_promote(
         &mut self,
         emitter: &mut Emitter,
         is_demote: bool,
     ) -> Result<(), CompileError> {
         let val = self.pop_value()?;
-        let src_is_f32 = !is_demote; // demote: src is f64, promote: src is f32
-        let freg = self.ensure_in_float_register(emitter, val, src_is_f32)?;
-
+        let freg = self.ensure_in_float_register(emitter, val, !is_demote)?;
         if is_demote {
-            // f32.demote_f64: convert f64 to f32
             emitter.conv_f32_from_f64(0, freg, freg)?;
         } else {
-            // f64.promote_f32: convert f32 to f64
             emitter.conv_f64_from_f32(0, freg, freg)?;
         }
-
         self.push(StackValue::FloatRegister(freg));
+        Ok(())
+    }
+
+    /// Compile global.get - load a global variable value
+    fn compile_global_get(
+        &mut self,
+        emitter: &mut Emitter,
+        global_index: u32,
+    ) -> Result<(), CompileError> {
+        let global = self
+            .globals
+            .get(global_index as usize)
+            .ok_or_else(|| {
+                CompileError::Invalid(format!(
+                    "Global index {} out of bounds (have {})",
+                    global_index,
+                    self.globals.len()
+                ))
+            })?
+            .clone();
+
+        let reg = self.alloc_register(emitter)?;
+        emitter.mov(0, reg, global.ptr as isize)?;
+        let mem = mem_offset(reg, 0);
+
+        match global.val_type {
+            ValType::I32 => {
+                emitter.mov32(0, reg, mem)?;
+            }
+            ValType::I64 => {
+                #[cfg(target_pointer_width = "64")]
+                {
+                    emitter.mov(0, reg, mem)?;
+                }
+                #[cfg(not(target_pointer_width = "64"))]
+                return Err(CompileError::Unsupported(
+                    "64-bit globals not supported on 32-bit platform".into(),
+                ));
+            }
+            ValType::F32 | ValType::F64 => {
+                let freg = self.alloc_float_register(emitter)?;
+                if matches!(global.val_type, ValType::F32) {
+                    emitter.mov_f32(0, freg, mem)?;
+                } else {
+                    emitter.mov_f64(0, freg, mem)?;
+                }
+                self.free_register(reg);
+                self.push(StackValue::FloatRegister(freg));
+                return Ok(());
+            }
+            _ => {
+                return Err(CompileError::Unsupported(format!(
+                    "Unsupported global type: {:?}",
+                    global.val_type
+                )));
+            }
+        }
+        self.push(StackValue::Register(reg));
+        Ok(())
+    }
+
+    /// Compile global.set - store a value to a global variable
+    fn compile_global_set(
+        &mut self,
+        emitter: &mut Emitter,
+        global_index: u32,
+    ) -> Result<(), CompileError> {
+        let global = self
+            .globals
+            .get(global_index as usize)
+            .ok_or_else(|| {
+                CompileError::Invalid(format!(
+                    "Global index {} out of bounds (have {})",
+                    global_index,
+                    self.globals.len()
+                ))
+            })?
+            .clone();
+
+        if !global.mutable {
+            return Err(CompileError::Invalid(format!(
+                "Cannot set immutable global {}",
+                global_index
+            )));
+        }
+
+        let value = self.pop_value()?;
+        let addr_reg = self.alloc_register(emitter)?;
+        emitter.mov(0, addr_reg, global.ptr as isize)?;
+        let mem = mem_offset(addr_reg, 0);
+
+        match global.val_type {
+            ValType::I32 => {
+                let val_reg = self.ensure_in_register(emitter, value)?;
+                emitter.mov32(0, mem, val_reg)?;
+                self.free_register(val_reg);
+            }
+            ValType::I64 => {
+                #[cfg(target_pointer_width = "64")]
+                {
+                    let val_reg = self.ensure_in_register(emitter, value)?;
+                    emitter.mov(0, mem, val_reg)?;
+                    self.free_register(val_reg);
+                }
+                #[cfg(not(target_pointer_width = "64"))]
+                return Err(CompileError::Unsupported(
+                    "64-bit globals not supported on 32-bit platform".into(),
+                ));
+            }
+            ValType::F32 => {
+                emitter.mov_f32(0, mem, value.to_operand())?;
+            }
+            ValType::F64 => {
+                emitter.mov_f64(0, mem, value.to_operand())?;
+            }
+            _ => {
+                return Err(CompileError::Unsupported(format!(
+                    "Unsupported global type: {:?}",
+                    global.val_type
+                )));
+            }
+        }
+        self.free_register(addr_reg);
+        Ok(())
+    }
+
+    /// Compile memory.size - return current memory size in pages
+    fn compile_memory_size(
+        &mut self,
+        emitter: &mut Emitter,
+        _mem: u32,
+    ) -> Result<(), CompileError> {
+        let size_ptr = self
+            .memory
+            .as_ref()
+            .ok_or_else(|| CompileError::Invalid("No memory defined".into()))?
+            .size_ptr;
+
+        let reg = self.alloc_register(emitter)?;
+        emitter.mov(0, reg, size_ptr as isize)?;
+        emitter.mov32(0, reg, mem_offset(reg, 0))?;
+        self.push(StackValue::Register(reg));
+        Ok(())
+    }
+
+    /// Compile memory.grow - grow memory by delta pages, return previous size or -1 on failure
+    fn compile_memory_grow(
+        &mut self,
+        emitter: &mut Emitter,
+        _mem: u32,
+    ) -> Result<(), CompileError> {
+        let (size_ptr, grow_callback) = {
+            let memory = self
+                .memory
+                .as_ref()
+                .ok_or_else(|| CompileError::Invalid("No memory defined".into()))?;
+
+            let grow_callback = memory
+                .grow_callback
+                .ok_or_else(|| CompileError::Unsupported("Memory grow callback not set".into()))?;
+
+            (memory.size_ptr, grow_callback)
+        };
+
+        // Pop the delta (number of pages to grow)
+        let delta = self.pop_value()?;
+        let delta_reg = self.ensure_in_register(emitter, delta)?;
+
+        // Load current size into R0 (first argument)
+        if delta_reg != ScratchRegister::R0 {
+            emitter.mov(0, ScratchRegister::R0, size_ptr as isize)?;
+            emitter.mov32(0, ScratchRegister::R0, mem_offset(ScratchRegister::R0, 0))?;
+        } else {
+            // delta is in R0, need to save it first
+            emitter.mov(0, ScratchRegister::R1, delta_reg)?;
+            emitter.mov(0, ScratchRegister::R0, size_ptr as isize)?;
+            emitter.mov32(0, ScratchRegister::R0, mem_offset(ScratchRegister::R0, 0))?;
+            emitter.mov(0, ScratchRegister::R1, ScratchRegister::R1)?; // delta now in R1
+        }
+
+        // Move delta to R1 (second argument) if not already there
+        if delta_reg != ScratchRegister::R1 && delta_reg != ScratchRegister::R0 {
+            emitter.mov(0, ScratchRegister::R1, delta_reg)?;
+            self.free_register(delta_reg);
+        } else if delta_reg == ScratchRegister::R0 {
+            // Already moved to R1 above
+            self.free_register(delta_reg);
+        }
+
+        // Call the grow callback: fn(current_pages: u32, delta: u32) -> i32
+        let addr_reg = self.alloc_register(emitter)?;
+        emitter.mov(0, addr_reg, grow_callback as isize)?;
+        // arg_types for (W, W) -> W: return type W, plus two W arguments
+        let arg_types_w2_w = SLJIT_ARG_TYPE_W | (SLJIT_ARG_TYPE_W << 4) | (SLJIT_ARG_TYPE_W << 8);
+        emitter.icall(JumpType::Call as i32, arg_types_w2_w, addr_reg)?;
+        self.free_register(addr_reg);
+
+        // Result is in R0
+        self.free_registers.retain(|&r| r != ScratchRegister::R0);
+        self.push(StackValue::Register(ScratchRegister::R0));
+        Ok(())
+    }
+
+    /// Compile call - direct function call
+    /// Supports functions with more than 3 parameters by passing extra args on stack
+    fn compile_call(
+        &mut self,
+        emitter: &mut Emitter,
+        function_index: u32,
+    ) -> Result<(), CompileError> {
+        if function_index as usize >= self.functions.len() {
+            return Err(CompileError::Invalid(format!(
+                "Function index {} out of bounds (have {})",
+                function_index,
+                self.functions.len()
+            )));
+        }
+
+        // Clone the needed data to avoid borrow issues
+        let func_code_ptr = self.functions[function_index as usize].code_ptr;
+        let func_params = self.functions[function_index as usize]
+            .func_type
+            .params
+            .clone();
+        let func_results = self.functions[function_index as usize]
+            .func_type
+            .results
+            .clone();
+        let param_count = func_params.len();
+        let result_count = func_results.len();
+
+        // Maximum 7 arguments supported by the arg_types bitmask
+        if param_count > 7 {
+            return Err(CompileError::Unsupported(
+                "Functions with more than 7 parameters not supported".into(),
+            ));
+        }
+
+        // Pop arguments in reverse order
+        let mut args = vec![];
+        for _ in 0..param_count {
+            args.push(self.pop_value()?);
+        }
+        args.reverse();
+
+        // Calculate stack space needed for extra arguments (args 4+)
+        let extra_stack_size = Self::get_extra_arg_stack_size(param_count);
+
+        // If we have extra arguments, allocate stack space and store them
+        if extra_stack_size > 0 {
+            // Adjust stack pointer to make room for extra arguments
+            emitter.sub(
+                0,
+                Operand::from(sys::SLJIT_SP as i32),
+                Operand::from(sys::SLJIT_SP as i32),
+                extra_stack_size,
+            )?;
+
+            // Store extra arguments (args 4+) on the stack
+            for (i, arg) in args.iter().enumerate().skip(3) {
+                let stack_offset = ((i - 3) * 8) as i32;
+                let reg = self.ensure_in_register(emitter, arg.clone())?;
+                emitter.mov(0, mem_sp_offset(stack_offset), reg)?;
+                self.free_register(reg);
+            }
+        }
+
+        // Move first 3 arguments to the appropriate registers
+        let arg_regs = [
+            ScratchRegister::R0,
+            ScratchRegister::R1,
+            ScratchRegister::R2,
+        ];
+        for (i, arg) in args.into_iter().take(3).enumerate() {
+            let reg = self.ensure_in_register(emitter, arg)?;
+            if reg != arg_regs[i] {
+                emitter.mov(0, arg_regs[i], reg)?;
+                self.free_register(reg);
+            }
+        }
+
+        // Load function address and call
+        let addr_reg = self.alloc_register(emitter)?;
+        emitter.mov(0, addr_reg, func_code_ptr as isize)?;
+
+        let arg_types = Self::make_arg_types(&func_params, &func_results);
+        emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
+        self.free_register(addr_reg);
+
+        // Restore stack pointer if we allocated extra space
+        if extra_stack_size > 0 {
+            emitter.add(
+                0,
+                Operand::from(sys::SLJIT_SP as i32),
+                Operand::from(sys::SLJIT_SP as i32),
+                extra_stack_size,
+            )?;
+        }
+
+        // Handle result
+        if result_count > 0 {
+            self.free_registers.retain(|&r| r != ScratchRegister::R0);
+            self.push(StackValue::Register(ScratchRegister::R0));
+        }
+
+        Ok(())
+    }
+
+    /// Compile call_indirect - indirect function call through table
+    /// Supports functions with more than 3 parameters by passing extra args on stack
+    fn compile_call_indirect(
+        &mut self,
+        emitter: &mut Emitter,
+        type_index: u32,
+        table_index: u32,
+    ) -> Result<(), CompileError> {
+        if table_index as usize >= self.tables.len() {
+            return Err(CompileError::Invalid(format!(
+                "Table index {} out of bounds (have {})",
+                table_index,
+                self.tables.len()
+            )));
+        }
+        if type_index as usize >= self.func_types.len() {
+            return Err(CompileError::Invalid(format!(
+                "Type index {} out of bounds (have {})",
+                type_index,
+                self.func_types.len()
+            )));
+        }
+
+        // Clone the needed data to avoid borrow issues
+        let table_data_ptr = self.tables[table_index as usize].data_ptr;
+        let func_params = self.func_types[type_index as usize].params.clone();
+        let func_results = self.func_types[type_index as usize].results.clone();
+        let param_count = func_params.len();
+        let result_count = func_results.len();
+
+        // Maximum 7 arguments supported by the arg_types bitmask
+        if param_count > 7 {
+            return Err(CompileError::Unsupported(
+                "Functions with more than 7 parameters not supported".into(),
+            ));
+        }
+
+        // Pop the table index (the value on top of stack)
+        let idx = self.pop_value()?;
+        let idx_reg = self.ensure_in_register(emitter, idx)?;
+
+        // Pop arguments in reverse order
+        let mut args = vec![];
+        for _ in 0..param_count {
+            args.push(self.pop_value()?);
+        }
+        args.reverse();
+
+        // Calculate the function pointer address: table.data_ptr + idx * sizeof(usize)
+        let func_ptr_reg = self.alloc_register(emitter)?;
+        emitter.mov(0, func_ptr_reg, table_data_ptr as isize)?;
+
+        // idx * sizeof(usize)
+        #[cfg(target_pointer_width = "64")]
+        emitter.shl(0, idx_reg, idx_reg, 3i32)?; // * 8
+        #[cfg(not(target_pointer_width = "64"))]
+        emitter.shl32(0, idx_reg, idx_reg, 2i32)?; // * 4
+
+        emitter.add(0, func_ptr_reg, func_ptr_reg, idx_reg)?;
+        self.free_register(idx_reg);
+
+        // Load the function pointer from the table
+        emitter.mov(0, func_ptr_reg, mem_offset(func_ptr_reg, 0))?;
+
+        // Save the function pointer to a temporary stack location since we'll need registers for args
+        let func_ptr_offset = self.frame_offset;
+        self.frame_offset += 8;
+        emitter.mov(0, mem_sp_offset(func_ptr_offset), func_ptr_reg)?;
+        self.free_register(func_ptr_reg);
+
+        // Calculate stack space needed for extra arguments (args 4+)
+        let extra_stack_size = Self::get_extra_arg_stack_size(param_count);
+
+        // If we have extra arguments, allocate stack space and store them
+        if extra_stack_size > 0 {
+            // Adjust stack pointer to make room for extra arguments
+            emitter.sub(
+                0,
+                Operand::from(sys::SLJIT_SP as i32),
+                Operand::from(sys::SLJIT_SP as i32),
+                extra_stack_size,
+            )?;
+
+            // Store extra arguments (args 4+) on the stack
+            for (i, arg) in args.iter().enumerate().skip(3) {
+                let stack_offset = ((i - 3) * 8) as i32;
+                let reg = self.ensure_in_register(emitter, arg.clone())?;
+                emitter.mov(0, mem_sp_offset(stack_offset), reg)?;
+                self.free_register(reg);
+            }
+        }
+
+        // Move first 3 arguments to the appropriate registers
+        let arg_regs = [
+            ScratchRegister::R0,
+            ScratchRegister::R1,
+            ScratchRegister::R2,
+        ];
+        for (i, arg) in args.into_iter().take(3).enumerate() {
+            let reg = self.ensure_in_register(emitter, arg)?;
+            if reg != arg_regs[i] {
+                emitter.mov(0, arg_regs[i], reg)?;
+                self.free_register(reg);
+            }
+        }
+
+        // Reload the function pointer
+        let addr_reg = self.alloc_register(emitter)?;
+        // Account for the stack adjustment when loading the saved function pointer
+        let adjusted_offset = if extra_stack_size > 0 {
+            func_ptr_offset + extra_stack_size
+        } else {
+            func_ptr_offset
+        };
+        emitter.mov(0, addr_reg, mem_sp_offset(adjusted_offset))?;
+
+        // Call through the function pointer
+        let arg_types = Self::make_arg_types(&func_params, &func_results);
+        emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
+        self.free_register(addr_reg);
+
+        // Restore stack pointer if we allocated extra space
+        if extra_stack_size > 0 {
+            emitter.add(
+                0,
+                Operand::from(sys::SLJIT_SP as i32),
+                Operand::from(sys::SLJIT_SP as i32),
+                extra_stack_size,
+            )?;
+        }
+
+        // Handle result
+        if result_count > 0 {
+            self.free_registers.retain(|&r| r != ScratchRegister::R0);
+            self.push(StackValue::Register(ScratchRegister::R0));
+        }
+
+        Ok(())
+    }
+
+    /// Compile br_table - branch table (switch-like construct)
+    fn compile_br_table(
+        &mut self,
+        emitter: &mut Emitter,
+        targets: &wasmparser::BrTable,
+    ) -> Result<(), CompileError> {
+        // Pop the index value
+        let idx = self.pop_value()?;
+        let idx_reg = self.ensure_in_register(emitter, idx)?;
+
+        self.save_all_to_stack(emitter)?;
+
+        // Get all targets
+        let default_target = targets.default();
+
+        // For each target, emit a comparison and conditional jump
+        // This is a simple linear search - for large tables, a jump table would be more efficient
+        for (i, target) in targets.targets().enumerate() {
+            let target = target.map_err(|e| CompileError::Parse(e.to_string()))?;
+            let mut jump = emitter.cmp(Condition::Equal, idx_reg, i as i32)?;
+
+            let block_idx = self.blocks.len() - 1 - target as usize;
+            if let Some(mut label) = self.blocks[block_idx].label {
+                jump.set_label(&mut label);
+            } else {
+                self.blocks[block_idx].end_jumps.push(jump);
+            }
+        }
+
+        // Default case - jump to default target
+        self.free_register(idx_reg);
+
+        let block_idx = self.blocks.len() - 1 - default_target as usize;
+        if let Some(mut label) = self.blocks[block_idx].label {
+            let mut jump = emitter.jump(JumpType::Jump)?;
+            jump.set_label(&mut label);
+        } else {
+            self.blocks[block_idx]
+                .end_jumps
+                .push(emitter.jump(JumpType::Jump)?);
+        }
+
         Ok(())
     }
 }
