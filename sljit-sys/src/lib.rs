@@ -213,12 +213,18 @@ pub enum Fop2r {
     CopysignF32 = SLJIT_COPYSIGN_F32,
 }
 
-pub const SLJIT_SET_F_EQUAL: i32 = (SLJIT_F_EQUAL) << 10;
-pub const SLJIT_SET_F_NOT_EQUAL: i32 = (SLJIT_F_NOT_EQUAL) << 10;
-pub const SLJIT_SET_F_LESS: i32 = (SLJIT_F_LESS) << 10;
-pub const SLJIT_SET_F_GREATER_EQUAL: i32 = (SLJIT_F_GREATER_EQUAL) << 10;
-pub const SLJIT_SET_F_GREATER: i32 = (SLJIT_F_GREATER) << 10;
-pub const SLJIT_SET_F_LESS_EQUAL: i32 = (SLJIT_F_LESS_EQUAL) << 10;
+pub const fn set(cond: i32) -> i32 {
+    cond << 10
+}
+
+pub const SLJIT_SET_F_EQUAL: i32 = set(SLJIT_F_EQUAL);
+pub const SLJIT_SET_F_NOT_EQUAL: i32 = set(SLJIT_F_NOT_EQUAL);
+pub const SLJIT_SET_F_LESS: i32 = set(SLJIT_F_LESS);
+pub const SLJIT_SET_F_GREATER_EQUAL: i32 = set(SLJIT_F_GREATER_EQUAL);
+pub const SLJIT_SET_F_GREATER: i32 = set(SLJIT_F_GREATER);
+pub const SLJIT_SET_F_LESS_EQUAL: i32 = set(SLJIT_F_LESS_EQUAL);
+pub const SLJIT_SET_CARRY: i32 = set(SLJIT_CARRY);
+
 #[inline(always)]
 pub fn has_cpu_feature(feature_type: sljit_s32) -> sljit_s32 {
     unsafe { sljit_has_cpu_feature(feature_type) }

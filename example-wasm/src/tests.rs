@@ -1,5 +1,8 @@
 use crunchy::unroll;
+use sljit::sys::Compiler;
 use wasmparser::{Ieee32, Ieee64, Parser, Payload};
+
+use crate::function::{CompiledFunction, Function, compile_simple};
 
 use super::*;
 

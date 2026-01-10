@@ -5,7 +5,9 @@ extern crate alloc;
 use alloc::vec::Vec;
 pub use sljit_sys as sys;
 
-use sljit_sys::{Compiler, ErrorCode, Jump, Label, sljit_sw};
+use sljit_sys::{
+    Compiler, ErrorCode, Fop1, Fop2, Fop2r, Jump, Label, Op0, Op1, Op2, Op2r, sljit_sw,
+};
 
 use crate::sys::SLJIT_MEM;
 
@@ -35,6 +37,12 @@ pub enum ScratchRegister {
     R9 = crate::sys::SLJIT_R9,
 }
 
+impl ScratchRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - ScratchRegister::R0 as i32) as usize
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
 /// A saved register.
@@ -59,6 +67,12 @@ pub enum SavedRegister {
     S8 = crate::sys::SLJIT_S8,
     /// Saved register 9.
     S9 = crate::sys::SLJIT_S9,
+}
+
+impl SavedRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - SavedRegister::S0 as i32) as usize
+    }
 }
 
 #[repr(i32)]
@@ -87,6 +101,12 @@ pub enum FloatRegister {
     FR9 = crate::sys::SLJIT_FR9,
 }
 
+impl FloatRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - FloatRegister::FR0 as i32) as usize
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// A saved float register.
@@ -113,6 +133,12 @@ pub enum SavedFloatRegister {
     FS9 = crate::sys::SLJIT_FS9,
 }
 
+impl SavedFloatRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - SavedFloatRegister::FS0 as i32) as usize
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
 /// A vector register.
@@ -131,6 +157,12 @@ pub enum VectorRegister {
     VR5 = crate::sys::SLJIT_VR5,
 }
 
+impl VectorRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - VectorRegister::VR0 as i32) as usize
+    }
+}
+
 #[repr(i32)]
 #[derive(Clone, Copy, Debug)]
 /// A saved vector register.
@@ -145,6 +177,12 @@ pub enum SavedVectorRegister {
     VS3 = crate::sys::SLJIT_VS3,
     /// Saved vector register 4.
     VS4 = crate::sys::SLJIT_VS4,
+}
+
+impl SavedVectorRegister {
+    pub const fn index(&self) -> usize {
+        (*self as i32 - SavedVectorRegister::VS0 as i32) as usize
+    }
 }
 
 #[repr(i32)]
@@ -461,7 +499,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name(&mut self) -> Result<&mut Self, ErrorCode> {
-                self.compiler.emit_op0($opcode)?;
+                self.compiler.emit_op0($opcode as i32)?;
                 Ok(self)
             }
         )*
@@ -472,9 +510,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name(&mut self, flags: i32, dst: impl Into<Operand>, src: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, dstw) = dst.into().into();
-                let (src, srcw) = src.into().into();
-                self.compiler.emit_op1($opcode | flags, dst, dstw, src, srcw)?;
+                self.emit_op1(($opcode, flags), dst, src)?;
                 Ok(self)
             }
         )*
@@ -485,10 +521,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name(&mut self, flags: i32, dst: impl Into<Operand>, src1: impl Into<Operand>, src2: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, dstw) = dst.into().into();
-                let (src1, src1w) = src1.into().into();
-                let (src2, src2w) = src2.into().into();
-                self.compiler.emit_op2($opcode | flags, dst, dstw, src1, src1w, src2, src2w)?;
+                self.emit_op2(($opcode, flags), dst, src1, src2)?;
                 Ok(self)
             }
         )*
@@ -499,10 +532,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name<R: GpRegister>(&mut self, flags: i32, dst: R, src1: impl Into<Operand>, src2: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, _) = dst.into().into();
-                let (src1, src1w) = src1.into().into();
-                let (src2, src2w) = src2.into().into();
-                self.compiler.emit_op2r($opcode | flags, dst, src1, src1w, src2, src2w)?;
+                self.emit_op2r(($opcode, flags), dst, src1, src2)?;
                 Ok(self)
             }
         )*
@@ -513,9 +543,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name(&mut self, flags: i32, dst: impl Into<Operand>, src: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, dstw) = dst.into().into();
-                let (src, srcw) = src.into().into();
-                self.compiler.emit_fop1($opcode | flags, dst, dstw, src, srcw)?;
+                self.emit_fop1(($opcode, flags), dst, src)?;
                 Ok(self)
             }
         )*
@@ -526,10 +554,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name(&mut self, flags: i32, dst: impl Into<Operand>, src1: impl Into<Operand>, src2: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, dstw) = dst.into().into();
-                let (src1, src1w) = src1.into().into();
-                let (src2, src2w) = src2.into().into();
-                self.compiler.emit_fop2($opcode | flags, dst, dstw, src1, src1w, src2, src2w)?;
+                self.emit_fop2(($opcode, flags), dst, src1, src2)?;
                 Ok(self)
             }
         )*
@@ -540,10 +565,7 @@ macro_rules! define_emitter_ops {
             $(#[doc = $doc])*
             #[inline(always)]
             pub fn $name<R: FloatRegisterType>(&mut self, flags: i32, dst: R, src1: impl Into<Operand>, src2: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
-                let (dst, _) = dst.into().into();
-                let (src1, src1w) = src1.into().into();
-                let (src2, src2w) = src2.into().into();
-                self.compiler.emit_fop2r($opcode | flags, dst, src1, src1w, src2, src2w)?;
+                self.emit_fop2r(($opcode, flags), dst, src1, src2)?;
                 Ok(self)
             }
         )*
@@ -555,7 +577,7 @@ macro_rules! define_emitter_ops {
             #[inline(always)]
             pub fn $name(&mut self, src: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
                 let (src, srcw) = src.into().into();
-                self.compiler.emit_op_src($opcode, src, srcw)?;
+                self.compiler.emit_op_src($opcode as i32, src, srcw)?;
                 Ok(self)
             }
         )*
@@ -567,7 +589,7 @@ macro_rules! define_emitter_ops {
             #[inline(always)]
             pub fn $name(&mut self, dst: impl Into<Operand>) -> Result<&mut Self, ErrorCode> {
                 let (dst, dstw) = dst.into().into();
-                self.compiler.emit_op_dst($opcode, dst, dstw)?;
+                self.compiler.emit_op_dst($opcode as i32, dst, dstw)?;
                 Ok(self)
             }
         )*
@@ -725,231 +747,231 @@ impl<'a> Emitter<'a> {
 
     define_emitter_ops! {
         /// Emits a `BREAKPOINT` instruction.
-        breakpoint, sys::Op0::Breakpoint as i32, 0;
+        breakpoint, sys::Op0::Breakpoint, 0;
         /// Emits a `NOP` instruction.
-        nop, sys::Op0::Nop as i32, 0;
+        nop, sys::Op0::Nop, 0;
         /// Emits a `LMUL.UW` instruction.
-        lmul_uword, sys::Op0::LmulUw as i32, 0;
+        lmul_uword, sys::Op0::LmulUw, 0;
         /// Emits a `LMUL.SW` instruction.
-        lmul_sword, sys::Op0::LmulSw as i32, 0;
+        lmul_sword, sys::Op0::LmulSw, 0;
         /// Emits a `DIVMOD.S32` instruction.
-        divmod_s32, sys::Op0::DivmodS32 as i32, 0;
+        divmod_s32, sys::Op0::DivmodS32, 0;
         /// Emits a `DIVMOD.SW` instruction.
-        divmod_sword, sys::Op0::DivmodSw as i32, 0;
+        divmod_sword, sys::Op0::DivmodSw, 0;
         /// Emits a `DIVMOD.U32` instruction.
-        divmod_u32, sys::Op0::DivmodU32 as i32, 0;
+        divmod_u32, sys::Op0::DivmodU32, 0;
         /// Emits a `DIVMOD.UW` instruction.
-        divmod_uword, sys::Op0::DivmodUw as i32, 0;
+        divmod_uword, sys::Op0::DivmodUw, 0;
         /// Emits a `DIV.S32` instruction.
-        div_s32, sys::Op0::DivS32 as i32, 0;
+        div_s32, sys::Op0::DivS32, 0;
         /// Emits a `DIV.SW` instruction.
-        div_sword, sys::Op0::DivSw as i32, 0;
+        div_sword, sys::Op0::DivSw, 0;
         /// Emits a `DIV.U32` instruction.
-        div_u32, sys::Op0::DivU32 as i32, 0;
+        div_u32, sys::Op0::DivU32, 0;
         /// Emits a `DIV.UW` instruction.
-        div_uword, sys::Op0::DivUw as i32, 0;
+        div_uword, sys::Op0::DivUw, 0;
         /// Emits an `ENDBR` instruction.
-        endbr, sys::Op0::Endbr as i32, 0;
+        endbr, sys::Op0::Endbr, 0;
         /// Emits a `SKIP_FRAMES_BEFORE_RETURN` instruction.
-        skip_frames_before_return, sys::Op0::SkipFramesBeforeReturn as i32, 0;
+        skip_frames_before_return, sys::Op0::SkipFramesBeforeReturn, 0;
     }
 
     define_emitter_ops! {
         /// Emits a `MOV` instruction.
-        mov, sys::Op1::Mov as i32, 1;
+        mov, sys::Op1::Mov, 1;
         /// Emits a `MOV.U8` instruction.
-        mov_u8, sys::Op1::MovU8 as i32, 1;
+        mov_u8, sys::Op1::MovU8, 1;
         /// Emits a `MOV.S8` instruction.
-        mov_s8, sys::Op1::MovS8 as i32, 1;
+        mov_s8, sys::Op1::MovS8, 1;
         /// Emits a `MOV.U16` instruction.
-        mov_u16, sys::Op1::MovU16 as i32, 1;
+        mov_u16, sys::Op1::MovU16, 1;
         /// Emits a `MOV.S16` instruction.
-        mov_s16, sys::Op1::MovS16 as i32, 1;
+        mov_s16, sys::Op1::MovS16, 1;
         /// Emits a `MOV.U32` instruction.
-        mov_u32, sys::Op1::MovU32 as i32, 1;
+        mov_u32, sys::Op1::MovU32, 1;
         /// Emits a `MOV.S32` instruction.
-        mov_s32, sys::Op1::MovS32 as i32, 1;
+        mov_s32, sys::Op1::MovS32, 1;
         /// Emits a `CTZ` instruction.
-        ctz, sys::Op1::Ctz as i32, 1;
+        ctz, sys::Op1::Ctz, 1;
         /// Emits a `CLZ` instruction.
-        clz, sys::Op1::Clz as i32, 1;
+        clz, sys::Op1::Clz, 1;
         /// Emits a `REV` instruction.
-        rev, sys::Op1::Rev as i32, 1;
+        rev, sys::Op1::Rev, 1;
         /// Emits a `MOV32.U8` instruction.
-        mov32_u8, sys::Op1::Mov32U8 as i32, 1;
+        mov32_u8, sys::Op1::Mov32U8, 1;
         /// Emits a `MOV32.S8` instruction.
-        mov32_s8, sys::Op1::Mov32S8 as i32, 1;
+        mov32_s8, sys::Op1::Mov32S8, 1;
         /// Emits a `MOV32.U16` instruction.
-        mov32_u16, sys::Op1::Mov32U16 as i32, 1;
+        mov32_u16, sys::Op1::Mov32U16, 1;
         /// Emits a `MOV32.S16` instruction.
-        mov32_s16, sys::Op1::Mov32S16 as i32, 1;
+        mov32_s16, sys::Op1::Mov32S16, 1;
         /// Emits a `MOV32` instruction.
-        mov32, sys::Op1::Mov32 as i32, 1;
+        mov32, sys::Op1::Mov32, 1;
         /// Emits a `CLZ32` instruction.
-        clz32, sys::Op1::Clz32 as i32, 1;
+        clz32, sys::Op1::Clz32, 1;
         /// Emits a `CTZ32` instruction.
-        ctz32, sys::Op1::Ctz32 as i32, 1;
+        ctz32, sys::Op1::Ctz32, 1;
         /// Emits a `REV32` instruction.
-        rev32, sys::Op1::Rev32 as i32, 1;
+        rev32, sys::Op1::Rev32, 1;
         /// Emits a `REV.U16` instruction.
-        rev_u16, sys::Op1::RevU16 as i32, 1;
+        rev_u16, sys::Op1::RevU16, 1;
         /// Emits a `REV32.U16` instruction.
-        rev32_u16, sys::Op1::Rev32U16 as i32, 1;
+        rev32_u16, sys::Op1::Rev32U16, 1;
         /// Emits a `REV.S16` instruction.
-        rev_s16, sys::Op1::RevS16 as i32, 1;
+        rev_s16, sys::Op1::RevS16, 1;
         /// Emits a `REV32.S16` instruction.
-        rev32_s16, sys::Op1::Rev32S16 as i32, 1;
+        rev32_s16, sys::Op1::Rev32S16, 1;
         /// Emits a `REV.U32` instruction.
-        rev_u32, sys::Op1::RevU32 as i32, 1;
+        rev_u32, sys::Op1::RevU32, 1;
         /// Emits a `REV.S32` instruction.
-        rev_s32, sys::Op1::RevS32 as i32, 1;
+        rev_s32, sys::Op1::RevS32, 1;
     }
 
     define_emitter_ops! {
         /// Emits an `ADD` instruction.
-        add, sys::Op2::Add as i32, 2;
+        add, sys::Op2::Add, 2;
         /// Emits a `SUB` instruction.
-        sub, sys::Op2::Sub as i32, 2;
+        sub, sys::Op2::Sub, 2;
         /// Emits a `MUL` instruction.
-        mul, sys::Op2::Mul as i32, 2;
+        mul, sys::Op2::Mul, 2;
         /// Emits an `AND` instruction.
-        and, sys::Op2::And as i32, 2;
+        and, sys::Op2::And, 2;
         /// Emits an `OR` instruction.
-        or, sys::Op2::Or as i32, 2;
+        or, sys::Op2::Or, 2;
         /// Emits a `XOR` instruction.
-        xor, sys::Op2::Xor as i32, 2;
+        xor, sys::Op2::Xor, 2;
         /// Emits a `SHL` instruction.
-        shl, sys::Op2::Shl as i32, 2;
+        shl, sys::Op2::Shl, 2;
         /// Emits a `MSHL` instruction.
-        mshl, sys::Op2::Mshl as i32, 2;
+        mshl, sys::Op2::Mshl, 2;
         /// Emits a `LSHR` instruction.
-        lshr, sys::Op2::Lshr as i32, 2;
+        lshr, sys::Op2::Lshr, 2;
         /// Emits a `MLSHR` instruction.
-        mlshr, sys::Op2::Mlshr as i32, 2;
+        mlshr, sys::Op2::Mlshr, 2;
         /// Emits an `ASHR` instruction.
-        ashr, sys::Op2::Ashr as i32, 2;
+        ashr, sys::Op2::Ashr, 2;
         /// Emits a `MASHR` instruction.
-        mashr, sys::Op2::Mashr as i32, 2;
+        mashr, sys::Op2::Mashr, 2;
         /// Emits an `ADD32` instruction.
-        add32, sys::Op2::Add32 as i32, 2;
+        add32, sys::Op2::Add32, 2;
         /// Emits an `ADDC` instruction.
-        addc, sys::Op2::Addc as i32, 2;
+        addc, sys::Op2::Addc, 2;
         /// Emits an `ADDC32` instruction.
-        addc32, sys::Op2::Addc32 as i32, 2;
+        addc32, sys::Op2::Addc32, 2;
         /// Emits a `SUB32` instruction.
-        sub32, sys::Op2::Sub32 as i32, 2;
+        sub32, sys::Op2::Sub32, 2;
         /// Emits a `SUBC` instruction.
-        subc, sys::Op2::Subc as i32, 2;
+        subc, sys::Op2::Subc, 2;
         /// Emits a `SUBC32` instruction.
-        subc32, sys::Op2::Subc32 as i32, 2;
+        subc32, sys::Op2::Subc32, 2;
         /// Emits a `MUL32` instruction.
-        mul32, sys::Op2::Mul32 as i32, 2;
+        mul32, sys::Op2::Mul32, 2;
         /// Emits an `AND32` instruction.
-        and32, sys::Op2::And32 as i32, 2;
+        and32, sys::Op2::And32, 2;
         /// Emits an `OR32` instruction.
-        or32, sys::Op2::Or32 as i32, 2;
+        or32, sys::Op2::Or32, 2;
         /// Emits a `XOR32` instruction.
-        xor32, sys::Op2::Xor32 as i32, 2;
+        xor32, sys::Op2::Xor32, 2;
         /// Emits a `SHL32` instruction.
-        shl32, sys::Op2::Shl32 as i32, 2;
+        shl32, sys::Op2::Shl32, 2;
         /// Emits a `MSHL32` instruction.
-        mshl32, sys::Op2::Mshl32 as i32, 2;
+        mshl32, sys::Op2::Mshl32, 2;
         /// Emits a `LSHR32` instruction.
-        lshr32, sys::Op2::Lshr32 as i32, 2;
+        lshr32, sys::Op2::Lshr32, 2;
         /// Emits a `MLSHR32` instruction.
-        mlshr32, sys::Op2::Mlshr32 as i32, 2;
+        mlshr32, sys::Op2::Mlshr32, 2;
         /// Emits an `ASHR32` instruction.
-        ashr32, sys::Op2::Ashr32 as i32, 2;
+        ashr32, sys::Op2::Ashr32, 2;
         /// Emits a `MASHR32` instruction.
-        mashr32, sys::Op2::Mashr32 as i32, 2;
+        mashr32, sys::Op2::Mashr32, 2;
         /// Emits a `ROTL` instruction.
-        rotl, sys::Op2::Rotl as i32, 2;
+        rotl, sys::Op2::Rotl, 2;
         /// Emits a `ROTL32` instruction.
-        rotl32, sys::Op2::Rotl32 as i32, 2;
+        rotl32, sys::Op2::Rotl32, 2;
         /// Emits a `ROTR` instruction.
-        rotr, sys::Op2::Rotr as i32, 2;
+        rotr, sys::Op2::Rotr, 2;
         /// Emits a `ROTR32` instruction.
-        rotr32, sys::Op2::Rotr32 as i32, 2;
+        rotr32, sys::Op2::Rotr32, 2;
     }
 
     define_emitter_ops! {
         /// Emits a `MULADD` instruction.
-        muladd, sys::Op2r::Muladd as i32, 2r;
+        muladd, sys::Op2r::Muladd, 2r;
         /// Emits a `MULADD32` instruction.
-        muladd32, sys::Op2r::Muladd32 as i32, 2r;
+        muladd32, sys::Op2r::Muladd32, 2r;
     }
 
     define_emitter_ops! {
         /// Emits a `MOV.F64` instruction.
-        mov_f64, sys::Fop1::MovF64 as i32, f1;
+        mov_f64, sys::Fop1::MovF64, f1;
         /// Emits a `MOV.F32` instruction.
-        mov_f32, sys::Fop1::MovF32 as i32, f1;
+        mov_f32, sys::Fop1::MovF32, f1;
         /// Emits a `CONV.F64.FROM.F32` instruction.
-        conv_f64_from_f32, sys::Fop1::ConvF64FromF32 as i32, f1;
+        conv_f64_from_f32, sys::Fop1::ConvF64FromF32, f1;
         /// Emits a `CONV.F32.FROM.F64` instruction.
-        conv_f32_from_f64, sys::Fop1::ConvF32FromF64 as i32, f1;
+        conv_f32_from_f64, sys::Fop1::ConvF32FromF64, f1;
         /// Emits a `CONV.SW.FROM.F64` instruction.
-        conv_sw_from_f64, sys::Fop1::ConvSwFromF64 as i32, f1;
+        conv_sw_from_f64, sys::Fop1::ConvSwFromF64, f1;
         /// Emits a `CONV.SW.FROM.F32` instruction.
-        conv_sw_from_f32, sys::Fop1::ConvSwFromF32 as i32, f1;
+        conv_sw_from_f32, sys::Fop1::ConvSwFromF32, f1;
         /// Emits a `CONV.S32.FROM.F64` instruction.
-        conv_s32_from_f64, sys::Fop1::ConvS32FromF64 as i32, f1;
+        conv_s32_from_f64, sys::Fop1::ConvS32FromF64, f1;
         /// Emits a `CONV.S32.FROM.F32` instruction.
-        conv_s32_from_f32, sys::Fop1::ConvS32FromF32 as i32, f1;
+        conv_s32_from_f32, sys::Fop1::ConvS32FromF32, f1;
         /// Emits a `CONV.F64.FROM.SW` instruction.
-        conv_f64_from_sw, sys::Fop1::ConvF64FromSw as i32, f1;
+        conv_f64_from_sw, sys::Fop1::ConvF64FromSw, f1;
         /// Emits a `CONV.F32.FROM.SW` instruction.
-        conv_f32_from_sw, sys::Fop1::ConvF32FromSw as i32, f1;
+        conv_f32_from_sw, sys::Fop1::ConvF32FromSw, f1;
         /// Emits a `CONV.F64.FROM.S32` instruction.
-        conv_f64_from_s32, sys::Fop1::ConvF64FromS32 as i32, f1;
+        conv_f64_from_s32, sys::Fop1::ConvF64FromS32, f1;
         /// Emits a `CONV.F32.FROM.S32` instruction.
-        conv_f32_from_s32, sys::Fop1::ConvF32FromS32 as i32, f1;
+        conv_f32_from_s32, sys::Fop1::ConvF32FromS32, f1;
         /// Emits a `CONV.F64.FROM.UW` instruction.
-        conv_f64_from_uw, sys::Fop1::ConvF64FromUw as i32, f1;
+        conv_f64_from_uw, sys::Fop1::ConvF64FromUw, f1;
         /// Emits a `CONV.F32.FROM.UW` instruction.
-        conv_f32_from_uw, sys::Fop1::ConvF32FromUw as i32, f1;
+        conv_f32_from_uw, sys::Fop1::ConvF32FromUw, f1;
         /// Emits a `CONV.F64.FROM.U32` instruction.
-        conv_f64_from_u32, sys::Fop1::ConvF64FromU32 as i32, f1;
+        conv_f64_from_u32, sys::Fop1::ConvF64FromU32, f1;
         /// Emits a `CONV.F32.FROM.U32` instruction.
-        conv_f32_from_u32, sys::Fop1::ConvF32FromU32 as i32, f1;
+        conv_f32_from_u32, sys::Fop1::ConvF32FromU32, f1;
         /// Emits a `CMP.F64` instruction.
-        cmp_f64, sys::Fop1::CmpF64 as i32, f1;
+        cmp_f64, sys::Fop1::CmpF64, f1;
         /// Emits a `CMP.F32` instruction.
-        cmp_f32, sys::Fop1::CmpF32 as i32, f1;
+        cmp_f32, sys::Fop1::CmpF32, f1;
         /// Emits a `NEG.F64` instruction.
-        neg_f64, sys::Fop1::NegF64 as i32, f1;
+        neg_f64, sys::Fop1::NegF64, f1;
         /// Emits a `NEG.F32` instruction.
-        neg_f32, sys::Fop1::NegF32 as i32, f1;
+        neg_f32, sys::Fop1::NegF32, f1;
         /// Emits an `ABS.F64` instruction.
-        abs_f64, sys::Fop1::AbsF64 as i32, f1;
+        abs_f64, sys::Fop1::AbsF64, f1;
         /// Emits an `ABS.F32` instruction.
-        abs_f32, sys::Fop1::AbsF32 as i32, f1;
+        abs_f32, sys::Fop1::AbsF32, f1;
     }
 
     define_emitter_ops! {
         /// Emits an `ADD.F64` instruction.
-        add_f64, sys::Fop2::AddF64 as i32, f2;
+        add_f64, sys::Fop2::AddF64, f2;
         /// Emits an `ADD.F32` instruction.
-        add_f32, sys::Fop2::AddF32 as i32, f2;
+        add_f32, sys::Fop2::AddF32, f2;
         /// Emits a `SUB.F64` instruction.
-        sub_f64, sys::Fop2::SubF64 as i32, f2;
+        sub_f64, sys::Fop2::SubF64, f2;
         /// Emits a `SUB.F32` instruction.
-        sub_f32, sys::Fop2::SubF32 as i32, f2;
+        sub_f32, sys::Fop2::SubF32, f2;
         /// Emits a `MUL.F64` instruction.
-        mul_f64, sys::Fop2::MulF64 as i32, f2;
+        mul_f64, sys::Fop2::MulF64, f2;
         /// Emits a `MUL.F32` instruction.
-        mul_f32, sys::Fop2::MulF32 as i32, f2;
+        mul_f32, sys::Fop2::MulF32, f2;
         /// Emits a `DIV.F64` instruction.
-        div_f64, sys::Fop2::DivF64 as i32, f2;
+        div_f64, sys::Fop2::DivF64, f2;
         /// Emits a `DIV.F32` instruction.
-        div_f32, sys::Fop2::DivF32 as i32, f2;
+        div_f32, sys::Fop2::DivF32, f2;
     }
 
     define_emitter_ops! {
         /// Emits a `COPYSIGN.F64` instruction.
-        copysign_f64, sys::Fop2r::CopysignF64 as i32, f2r;
+        copysign_f64, sys::Fop2r::CopysignF64, f2r;
         /// Emits a `COPYSIGN.F32` instruction.
-        copysign_f32, sys::Fop2r::CopysignF32 as i32, f2r;
+        copysign_f32, sys::Fop2r::CopysignF32, f2r;
     }
 
     define_emitter_ops! {
@@ -1385,6 +1407,20 @@ impl<'a> Emitter<'a> {
         Ok(label)
     }
 
+    #[inline(always)]
+    pub fn emit_op2u(
+        &mut self,
+        (op, flags): (Op2, i32),
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (src1, src1w) = src1.into().into();
+        let (src2, src2w) = src2.into().into();
+        self.compiler
+            .emit_op2u(op as i32 | flags, src1, src1w, src2, src2w)?;
+        Ok(self)
+    }
+
     /// Return to the caller function.
     ///
     /// # Parameters
@@ -1432,6 +1468,104 @@ impl<'a> Emitter<'a> {
     ) -> Result<&mut Self, ErrorCode> {
         let (dst, dstw) = dst.into().into();
         self.compiler.get_local_base(dst, dstw, offset);
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_op0(&mut self, opcode: Op0) -> Result<&mut Self, ErrorCode> {
+        self.compiler.emit_op0(opcode as i32)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_op1(
+        &mut self,
+        (opcode, flags): (Op1, i32),
+        dst: impl Into<Operand>,
+        src: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, dstw) = dst.into().into();
+        let (src, srcw) = src.into().into();
+        self.compiler
+            .emit_op1(opcode as i32 | flags, dst, dstw, src, srcw)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_fop1(
+        &mut self,
+        (opcode, flags): (Fop1, i32),
+        dst: impl Into<Operand>,
+        src: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, dstw) = dst.into().into();
+        let (src, srcw) = src.into().into();
+        self.compiler
+            .emit_fop1(opcode as i32 | flags, dst, dstw, src, srcw)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_op2(
+        &mut self,
+        (opcode, flags): (Op2, i32),
+        dst: impl Into<Operand>,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, dstw) = dst.into().into();
+        let (src1, src1w) = src1.into().into();
+        let (src2, src2w) = src2.into().into();
+        self.compiler
+            .emit_op2(opcode as i32 | flags, dst, dstw, src1, src1w, src2, src2w)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_fop2(
+        &mut self,
+        (opcode, flags): (Fop2, i32),
+        dst: impl Into<Operand>,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, dstw) = dst.into().into();
+        let (src1, src1w) = src1.into().into();
+        let (src2, src2w) = src2.into().into();
+        self.compiler
+            .emit_fop2(opcode as i32 | flags, dst, dstw, src1, src1w, src2, src2w)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_op2r(
+        &mut self,
+        (opcode, flags): (Op2r, i32),
+        dst_reg: impl GpRegister,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, _) = dst_reg.into().into();
+        let (src1, src1w) = src1.into().into();
+        let (src2, src2w) = src2.into().into();
+        self.compiler
+            .emit_op2r(opcode as i32 | flags, dst, src1, src1w, src2, src2w)?;
+        Ok(self)
+    }
+
+    #[inline(always)]
+    pub fn emit_fop2r(
+        &mut self,
+        (opcode, flags): (Fop2r, i32),
+        dst_reg: impl FloatRegisterType,
+        src1: impl Into<Operand>,
+        src2: impl Into<Operand>,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (dst, _) = dst_reg.into().into();
+        let (src1, src1w) = src1.into().into();
+        let (src2, src2w) = src2.into().into();
+        self.compiler
+            .emit_fop2r(opcode as i32 | flags, dst, src1, src1w, src2, src2w)?;
         Ok(self)
     }
 
