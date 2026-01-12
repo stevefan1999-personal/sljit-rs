@@ -1159,9 +1159,9 @@ fn test_memory_i32_store_load() {
 
     // Create a memory buffer
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 42);
 }
@@ -1196,9 +1196,9 @@ fn test_memory_i32_store_load_with_offset() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 123);
 }
@@ -1234,9 +1234,9 @@ fn test_memory_i8_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f_u = func_u.as_fn::<fn(i32) -> i32>();
+    let f_u = func_u.as_fn::<fn(isize) -> i32>();
     assert_eq!(f_u(memory_base), 255); // Unsigned load: 0xFF = 255
 
     // Test signed load
@@ -1267,9 +1267,9 @@ fn test_memory_i8_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory2 = [0u8; 64];
-    let memory_base2 = memory2.as_mut_ptr() as i32;
+    let memory_base2 = memory2.as_mut_ptr() as isize;
 
-    let f_s = func_s.as_fn::<fn(i32) -> i32>();
+    let f_s = func_s.as_fn::<fn(isize) -> i32>();
     assert_eq!(f_s(memory_base2), -1); // Signed load: 0xFF sign-extended = -1
 }
 
@@ -1303,9 +1303,9 @@ fn test_memory_i16_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f_u = func_u.as_fn::<fn(i32) -> i32>();
+    let f_u = func_u.as_fn::<fn(isize) -> i32>();
     assert_eq!(f_u(memory_base), 65535); // Unsigned load: 0xFFFF = 65535
 
     // Test signed load
@@ -1336,9 +1336,9 @@ fn test_memory_i16_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory2 = [0u8; 64];
-    let memory_base2 = memory2.as_mut_ptr() as i32;
+    let memory_base2 = memory2.as_mut_ptr() as isize;
 
-    let f_s = func_s.as_fn::<fn(i32) -> i32>();
+    let f_s = func_s.as_fn::<fn(isize) -> i32>();
     assert_eq!(f_s(memory_base2), -1); // Signed load: 0xFFFF sign-extended = -1
 }
 
@@ -1416,9 +1416,9 @@ fn test_memory_multiple_stores_loads() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 60); // 10 + 20 + 30 = 60
 }
@@ -1456,9 +1456,9 @@ fn test_memory_dynamic_offset() {
         .expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32, i32) -> i32>();
+    let f = func.as_fn::<fn(isize, i32) -> i32>();
 
     // Test storing at different offsets
     assert_eq!(f(memory_base, 0), 99);
@@ -1501,9 +1501,9 @@ fn test_memory_i64_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0x123456789ABCDEF = 0x89ABCDEF
     assert_eq!(result, 0x89ABCDEFu32 as i32);
@@ -1547,9 +1547,9 @@ fn test_memory_i64_store_load_full_value() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 0xFEDCBA9876543210 = 0xFEDCBA98
     assert_eq!(result, 0xFEDCBA98u32 as i32);
@@ -1586,9 +1586,9 @@ fn test_memory_i64_load8_unsigned() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 255); // Unsigned: 0xFF = 255
 }
@@ -1624,9 +1624,9 @@ fn test_memory_i64_load8_signed() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Sign-extended: 0xFF -> -1
 }
@@ -1662,9 +1662,9 @@ fn test_memory_i64_load16_unsigned() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 65535); // Unsigned: 0xFFFF = 65535
 }
@@ -1700,9 +1700,9 @@ fn test_memory_i64_load16_signed() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Sign-extended: 0xFFFF -> -1
 }
@@ -1743,9 +1743,9 @@ fn test_memory_i64_load32_unsigned() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 0); // Upper 32 bits should be 0 (zero-extended)
 }
@@ -1786,9 +1786,9 @@ fn test_memory_i64_load32_signed() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Upper 32 bits should be 0xFFFFFFFF (sign-extended)
 }
@@ -1826,9 +1826,9 @@ fn test_memory_i64_with_offset() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0xDEADBEEFCAFEBABE = 0xCAFEBABE
     assert_eq!(result, 0xCAFEBABEu32 as i32);
@@ -1892,9 +1892,9 @@ fn test_memory_i64_multiple_stores_loads() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of (0x1111111111111111 + 0x2222222222222222) = 0x3333333333333333
     // Lower 32 bits = 0x33333333
@@ -1937,9 +1937,9 @@ fn test_memory_f32_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Should get back the same bits: 0x40490FDB
     assert_eq!(result as u32, 0x40490FDB);
@@ -1978,9 +1978,9 @@ fn test_memory_f32_store_load_with_offset() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // 10.0f = 0x41200000
     assert_eq!(result as u32, 0x41200000);
@@ -2044,9 +2044,9 @@ fn test_memory_f32_multiple_stores_loads() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // 1.5 + 2.5 = 4.0f = 0x40800000
     assert_eq!(result as u32, 0x40800000);
@@ -2087,9 +2087,9 @@ fn test_memory_f64_store_load() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0x400921FB54442D18 = 0x54442D18
     assert_eq!(result as u32, 0x54442D18);
@@ -2132,9 +2132,9 @@ fn test_memory_f64_store_load_upper_bits() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 0x400921FB54442D18 = 0x400921FB
     assert_eq!(result as u32, 0x400921FB);
@@ -2176,9 +2176,9 @@ fn test_memory_f64_store_load_with_offset() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 10.0 (0x4024000000000000) = 0x40240000
     assert_eq!(result as u32, 0x40240000);
@@ -2246,9 +2246,9 @@ fn test_memory_f64_multiple_stores_loads() {
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32) -> i32>();
+    let f = func.as_fn::<fn(isize) -> i32>();
     let result = f(memory_base);
     // 1.5 + 2.5 = 4.0 = 0x4010000000000000, upper bits = 0x40100000
     assert_eq!(result as u32, 0x40100000);
@@ -2287,9 +2287,9 @@ fn test_memory_f32_dynamic_offset() {
         .expect("Compilation failed");
 
     let mut memory = [0u8; 64];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32, i32) -> i32>();
+    let f = func.as_fn::<fn(isize, i32) -> i32>();
 
     // Test storing at different offsets
     assert_eq!(f(memory_base, 0) as u32, 0x42280000);
@@ -2333,9 +2333,9 @@ fn test_memory_f64_dynamic_offset() {
         .expect("Compilation failed");
 
     let mut memory = [0u8; 128];
-    let memory_base = memory.as_mut_ptr() as i32;
+    let memory_base = memory.as_mut_ptr() as isize;
 
-    let f = func.as_fn::<fn(i32, i32) -> i32>();
+    let f = func.as_fn::<fn(isize, i32) -> i32>();
 
     // Test storing at different offsets - upper 32 bits of 42.0 = 0x40450000
     assert_eq!(f(memory_base, 0) as u32, 0x40450000);
