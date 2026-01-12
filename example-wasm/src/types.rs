@@ -4,11 +4,10 @@
 //! - `ValType` - WebAssembly value types
 //! - `Value` - Runtime values
 //! - `FuncType` - Function signatures
-//! - `Engine` - Compilation configuration
 //! - `Trap` - Runtime errors
 
 use std::fmt;
-use std::sync::Arc;
+use thiserror::Error;
 
 // ============================================================================
 // Value Types
@@ -346,131 +345,12 @@ impl fmt::Display for FuncType {
 }
 
 // ============================================================================
-// Engine Configuration
-// ============================================================================
-
-/// Optimization level for JIT compilation
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OptLevel {
-    /// No optimizations, fastest compile time
-    None,
-    /// Basic optimizations, balanced (default)
-    #[default]
-    Speed,
-    /// Aggressive optimizations, slower compile
-    SpeedAndSize,
-}
-
-/// WebAssembly feature flags
-#[derive(Clone, Debug)]
-pub struct WasmFeatures {
-    /// Enable multi-value returns
-    pub multi_value: bool,
-    /// Enable bulk memory operations
-    pub bulk_memory: bool,
-    /// Enable reference types
-    pub reference_types: bool,
-    /// Enable SIMD (not currently supported)
-    pub simd: bool,
-    /// Enable mutable globals
-    pub mutable_global: bool,
-    /// Enable sign extension operators
-    pub sign_extension: bool,
-    /// Enable saturating float-to-int conversions
-    pub saturating_float_to_int: bool,
-}
-
-impl Default for WasmFeatures {
-    fn default() -> Self {
-        Self {
-            multi_value: true,
-            bulk_memory: true,
-            reference_types: true,
-            simd: false, // Not supported
-            mutable_global: true,
-            sign_extension: true,
-            saturating_float_to_int: true,
-        }
-    }
-}
-
-/// Engine configuration for compilation and runtime
-#[derive(Clone, Debug)]
-pub struct EngineConfig {
-    /// Optimization level
-    pub opt_level: OptLevel,
-    /// WebAssembly features
-    pub features: WasmFeatures,
-    /// Maximum stack depth (in frames)
-    pub max_stack_depth: usize,
-    /// Enable fuel metering
-    pub fuel_metering: bool,
-}
-
-impl Default for EngineConfig {
-    fn default() -> Self {
-        Self {
-            opt_level: OptLevel::Speed,
-            features: WasmFeatures::default(),
-            max_stack_depth: 1024,
-            fuel_metering: false,
-        }
-    }
-}
-
-/// Compilation and runtime engine
-///
-/// The Engine holds configuration for compilation and is stateless.
-/// It can be shared across threads via `Arc<Engine>`.
-#[derive(Clone, Debug)]
-pub struct Engine {
-    config: EngineConfig,
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new(EngineConfig::default())
-    }
-}
-
-impl Engine {
-    /// Create a new engine with the given configuration
-    #[inline]
-    pub fn new(config: EngineConfig) -> Self {
-        Self { config }
-    }
-
-    /// Get the engine configuration
-    #[inline]
-    pub fn config(&self) -> &EngineConfig {
-        &self.config
-    }
-
-    /// Get the optimization level
-    #[inline]
-    pub fn opt_level(&self) -> OptLevel {
-        self.config.opt_level
-    }
-
-    /// Get the WebAssembly features
-    #[inline]
-    pub fn features(&self) -> &WasmFeatures {
-        &self.config.features
-    }
-
-    /// Create a shared engine
-    #[inline]
-    pub fn into_shared(self) -> Arc<Self> {
-        Arc::new(self)
-    }
-}
-
-// ============================================================================
 // Error Types
 // ============================================================================
 
 /// Runtime trap - unrecoverable error during execution
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("trap: {message}")]
 pub struct Trap {
     /// The kind of trap
     pub kind: TrapKind,
@@ -555,14 +435,6 @@ impl Trap {
     }
 }
 
-impl fmt::Display for Trap {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "trap: {}", self.message)
-    }
-}
-
-impl std::error::Error for Trap {}
-
 /// The kind of runtime trap
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrapKind {
@@ -609,79 +481,47 @@ impl fmt::Display for TrapKind {
 }
 
 /// Errors during module instantiation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum InstantiationError {
     /// Import not found
+    #[error("import not found: {module}.{name}")]
     ImportNotFound { module: String, name: String },
     /// Import type mismatch
+    #[error("import type mismatch: expected {expected}, got {got}")]
     ImportTypeMismatch { expected: String, got: String },
     /// Memory initialization failed
+    #[error("memory initialization failed: {0}")]
     MemoryInitFailed(String),
     /// Table initialization failed
+    #[error("table initialization failed: {0}")]
     TableInitFailed(String),
     /// Start function trapped
-    StartTrapped(Trap),
+    #[error("start function trapped: {0}")]
+    StartTrapped(#[from] Trap),
     /// Module validation failed
+    #[error("validation failed: {0}")]
     ValidationFailed(String),
 }
 
-impl fmt::Display for InstantiationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ImportNotFound { module, name } => {
-                write!(f, "import not found: {}.{}", module, name)
-            }
-            Self::ImportTypeMismatch { expected, got } => {
-                write!(
-                    f,
-                    "import type mismatch: expected {}, got {}",
-                    expected, got
-                )
-            }
-            Self::MemoryInitFailed(msg) => write!(f, "memory initialization failed: {}", msg),
-            Self::TableInitFailed(msg) => write!(f, "table initialization failed: {}", msg),
-            Self::StartTrapped(trap) => write!(f, "start function trapped: {}", trap),
-            Self::ValidationFailed(msg) => write!(f, "validation failed: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for InstantiationError {}
-
-impl From<Trap> for InstantiationError {
-    fn from(trap: Trap) -> Self {
-        Self::StartTrapped(trap)
-    }
-}
-
 /// Errors during compilation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum CompileError {
     /// Parsing error
+    #[error("parse error: {0}")]
     Parse(String),
     /// SLJIT error
+    #[error("sljit error: {0}")]
     Sljit(String),
     /// Unsupported feature
+    #[error("unsupported: {0}")]
     Unsupported(String),
     /// Invalid WebAssembly
+    #[error("invalid: {0}")]
     Invalid(String),
     /// Register allocation failed
+    #[error("register allocation failed")]
     RegisterAllocationFailed,
 }
-
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Parse(msg) => write!(f, "parse error: {}", msg),
-            Self::Sljit(msg) => write!(f, "sljit error: {}", msg),
-            Self::Unsupported(msg) => write!(f, "unsupported: {}", msg),
-            Self::Invalid(msg) => write!(f, "invalid: {}", msg),
-            Self::RegisterAllocationFailed => write!(f, "register allocation failed"),
-        }
-    }
-}
-
-impl std::error::Error for CompileError {}
 
 impl From<sljit::sys::ErrorCode> for CompileError {
     fn from(e: sljit::sys::ErrorCode) -> Self {
@@ -717,57 +557,61 @@ impl From<RefType> for ValType {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// ============================================================================
+// Compiler Internal Types
+// ============================================================================
 
-    #[test]
-    fn test_val_type_properties() {
-        assert!(ValType::I32.is_num());
-        assert!(ValType::I32.is_int());
-        assert!(!ValType::I32.is_float());
-        assert!(!ValType::I32.is_ref());
-
-        assert!(ValType::F64.is_num());
-        assert!(ValType::F64.is_float());
-        assert!(!ValType::F64.is_int());
-
-        assert!(ValType::FuncRef.is_ref());
-        assert!(!ValType::FuncRef.is_num());
-    }
-
-    #[test]
-    fn test_value_types() {
-        let v = Value::I32(42);
-        assert_eq!(v.ty(), ValType::I32);
-        assert_eq!(v.as_i32(), Some(42));
-        assert_eq!(v.as_i64(), None);
-
-        let v = Value::F64(3.14);
-        assert_eq!(v.ty(), ValType::F64);
-        assert_eq!(v.as_f64(), Some(3.14));
-    }
-
-    #[test]
-    fn test_func_type() {
-        let ft = FuncType::new(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
-        assert_eq!(ft.params().len(), 2);
-        assert_eq!(ft.results().len(), 1);
-        assert_eq!(ft.to_string(), "(i32, i32) -> (i32)");
-    }
-
-    #[test]
-    fn test_engine_default() {
-        let engine = Engine::default();
-        assert_eq!(engine.opt_level(), OptLevel::Speed);
-        assert!(engine.features().multi_value);
-        assert!(!engine.features().simd);
-    }
-
-    #[test]
-    fn test_trap_creation() {
-        let trap = Trap::unreachable();
-        assert_eq!(trap.kind, TrapKind::Unreachable);
-        assert!(trap.message.contains("unreachable"));
-    }
+/// Global variable info (compiler internal representation)
+/// Uses wasmparser::ValType internally for compiler compatibility
+#[derive(Clone, Debug)]
+pub struct GlobalInfo {
+    /// Pointer to the global's memory location
+    pub ptr: usize,
+    /// Whether the global is mutable
+    pub mutable: bool,
+    /// Value type of the global (uses wasmparser::ValType for compiler)
+    pub val_type: wasmparser::ValType,
 }
+
+/// Memory instance info (compiler internal representation)
+#[derive(Clone, Debug)]
+pub struct MemoryInfo {
+    /// Pointer to the memory data
+    pub data_ptr: usize,
+    /// Pointer to the current size (in pages)
+    pub size_ptr: usize,
+    /// Maximum size in pages (if specified)
+    pub max_pages: Option<u32>,
+    /// Memory grow callback: fn(current_pages: u32, delta: u32) -> i32 (returns -1 on failure, new size on success)
+    pub grow_callback: Option<extern "C" fn(current_pages: u32, delta: u32) -> i32>,
+}
+
+/// Compiled function entry for direct calls (compiler internal)
+#[derive(Clone, Debug)]
+pub struct FunctionEntry {
+    /// Pointer to the compiled function code (used for host functions)
+    pub code_ptr: usize,
+    /// Pointer to a location storing the code_ptr (used for wasm functions)
+    /// This enables indirect calls that work even when code_ptr is updated later
+    pub code_ptr_ptr: Option<*const usize>,
+    /// Function type (uses wasmparser types internally)
+    pub params: Vec<wasmparser::ValType>,
+    pub results: Vec<wasmparser::ValType>,
+}
+
+// Safety: FunctionEntry contains raw pointers but they are only used for reading
+// code_ptr values that are stable once set during compilation
+unsafe impl Send for FunctionEntry {}
+unsafe impl Sync for FunctionEntry {}
+
+/// Table entry for indirect calls
+#[derive(Clone, Debug)]
+pub struct TableEntry {
+    /// Pointer to the table data (array of function pointers)
+    pub data_ptr: usize,
+    /// Current table size
+    pub size: u32,
+}
+
+#[cfg(test)]
+mod tests;

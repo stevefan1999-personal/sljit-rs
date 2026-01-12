@@ -6,11 +6,11 @@
 
 use libffi::high::{Closure0, Closure1, Closure2, Closure3};
 
-use crate::store::{get_current_store, HostFuncCallback};
+use crate::store::{HostFuncCallback, get_current_store};
 use crate::types::{FuncIdx, FuncType, ValType, Value};
 
 /// Storage for libffi closures to keep them alive
-/// 
+///
 /// libffi closures must be kept alive as long as the function pointer is used.
 /// This enum holds closures with different arities.
 #[allow(clippy::type_complexity)]
@@ -93,7 +93,6 @@ fn value_to_word(value: &Value) -> usize {
     }
 }
 
-
 /// Create a libffi-based trampoline for a host function
 ///
 /// This creates a libffi closure that:
@@ -112,29 +111,26 @@ pub fn create_libffi_trampoline(
 ) -> Option<LibffiTrampoline> {
     let num_params = func_type.params().len();
     let param_types: Vec<ValType> = func_type.params().to_vec();
-    
+
     // Clone the callback for the closure
     let callback = callback.clone();
-    
+
     match num_params {
         0 => {
             let param_types = param_types.clone();
-            let closure_fn = move || -> usize {
-                call_host_func(func_idx, &callback, &[], &param_types)
-            };
-            
+            let closure_fn =
+                move || -> usize { call_host_func(func_idx, &callback, &[], &param_types) };
+
             // Box and leak to get 'static lifetime
             let boxed = Box::new(closure_fn);
             let leaked: &'static mut _ = Box::leak(boxed);
-            
+
             let closure = Closure0::new(leaked);
             // Extract the function pointer address exactly like the libffi example
             // The code_ptr() returns an FnPtr type which wraps a raw code pointer
             let fn_ptr = closure.code_ptr();
-            let fn_ptr_addr: usize = unsafe {
-                std::ptr::read(fn_ptr as *const _ as *const usize)
-            };
-            
+            let fn_ptr_addr: usize = unsafe { std::ptr::read(fn_ptr as *const _ as *const usize) };
+
             Some(LibffiTrampoline {
                 closure: LibffiClosure::Arity0(closure),
                 fn_ptr: fn_ptr_addr,
@@ -145,16 +141,14 @@ pub fn create_libffi_trampoline(
             let closure_fn = move |arg0: usize| -> usize {
                 call_host_func(func_idx, &callback, &[arg0], &param_types)
             };
-            
+
             let boxed = Box::new(closure_fn);
             let leaked: &'static mut _ = Box::leak(boxed);
-            
+
             let closure = Closure1::new(leaked);
             let fn_ptr = closure.code_ptr();
-            let fn_ptr_addr: usize = unsafe {
-                std::ptr::read(fn_ptr as *const _ as *const usize)
-            };
-            
+            let fn_ptr_addr: usize = unsafe { std::ptr::read(fn_ptr as *const _ as *const usize) };
+
             Some(LibffiTrampoline {
                 closure: LibffiClosure::Arity1(closure),
                 fn_ptr: fn_ptr_addr,
@@ -165,16 +159,14 @@ pub fn create_libffi_trampoline(
             let closure_fn = move |arg0: usize, arg1: usize| -> usize {
                 call_host_func(func_idx, &callback, &[arg0, arg1], &param_types)
             };
-            
+
             let boxed = Box::new(closure_fn);
             let leaked: &'static mut _ = Box::leak(boxed);
-            
+
             let closure = Closure2::new(leaked);
             let fn_ptr = closure.code_ptr();
-            let fn_ptr_addr: usize = unsafe {
-                std::ptr::read(fn_ptr as *const _ as *const usize)
-            };
-            
+            let fn_ptr_addr: usize = unsafe { std::ptr::read(fn_ptr as *const _ as *const usize) };
+
             Some(LibffiTrampoline {
                 closure: LibffiClosure::Arity2(closure),
                 fn_ptr: fn_ptr_addr,
@@ -185,16 +177,14 @@ pub fn create_libffi_trampoline(
             let closure_fn = move |arg0: usize, arg1: usize, arg2: usize| -> usize {
                 call_host_func(func_idx, &callback, &[arg0, arg1, arg2], &param_types)
             };
-            
+
             let boxed = Box::new(closure_fn);
             let leaked: &'static mut _ = Box::leak(boxed);
-            
+
             let closure = Closure3::new(leaked);
             let fn_ptr = closure.code_ptr();
-            let fn_ptr_addr: usize = unsafe {
-                std::ptr::read(fn_ptr as *const _ as *const usize)
-            };
-            
+            let fn_ptr_addr: usize = unsafe { std::ptr::read(fn_ptr as *const _ as *const usize) };
+
             Some(LibffiTrampoline {
                 closure: LibffiClosure::Arity3(closure),
                 fn_ptr: fn_ptr_addr,
@@ -208,7 +198,7 @@ pub fn create_libffi_trampoline(
 }
 
 /// Internal helper to call a host function
-/// 
+///
 /// This is called from within the libffi closure and handles:
 /// - Getting the store from TLS
 /// - Converting arguments
@@ -226,10 +216,10 @@ fn call_host_func(
         None => return 0, // Error: no store context
     };
     let store = unsafe { &mut *store_ptr };
-    
+
     // Convert word arguments to Values
     let args = word_args_to_values(word_args, param_types);
-    
+
     // Call the host callback
     match callback(store, &args) {
         Ok(results) => {
@@ -244,47 +234,4 @@ fn call_host_func(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Arc;
-    use crate::types::FuncType;
-    
-    #[test]
-    fn test_create_trampoline_0_args() {
-        let func_type = FuncType::new(vec![], vec![ValType::I32]);
-        let callback: HostFuncCallback = Arc::new(|_store, _args| {
-            Ok(vec![Value::I32(42)])
-        });
-        
-        let trampoline = create_libffi_trampoline(FuncIdx(0), &func_type, callback);
-        assert!(trampoline.is_some());
-        
-        let trampoline = trampoline.unwrap();
-        assert!(trampoline.fn_ptr != 0);
-    }
-    
-    #[test]
-    fn test_create_trampoline_1_arg() {
-        let func_type = FuncType::new(vec![ValType::I32], vec![ValType::I32]);
-        let callback: HostFuncCallback = Arc::new(|_store, args| {
-            let x = args[0].unwrap_i32();
-            Ok(vec![Value::I32(x * 2)])
-        });
-        
-        let trampoline = create_libffi_trampoline(FuncIdx(0), &func_type, callback);
-        assert!(trampoline.is_some());
-    }
-    
-    #[test]
-    fn test_create_trampoline_2_args() {
-        let func_type = FuncType::new(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
-        let callback: HostFuncCallback = Arc::new(|_store, args| {
-            let a = args[0].unwrap_i32();
-            let b = args[1].unwrap_i32();
-            Ok(vec![Value::I32(a + b)])
-        });
-        
-        let trampoline = create_libffi_trampoline(FuncIdx(0), &func_type, callback);
-        assert!(trampoline.is_some());
-    }
-}
+mod tests;

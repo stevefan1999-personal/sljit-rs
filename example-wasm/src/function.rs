@@ -11,14 +11,97 @@ use wasmparser::{Operator, ValType};
 
 use crate::CompileError;
 use crate::module::InternalFuncType;
-use crate::{
-    Block, DivOp, FloatBinaryOp, FloatUnaryOp, FunctionEntry, GlobalInfo, LocalVar, MemoryInfo,
-    StackValue, TableEntry, UnaryOp, helpers,
-};
+use crate::{FunctionEntry, GlobalInfo, MemoryInfo, TableEntry, helpers};
+
+/// Information about a control flow block
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Block {
+    pub(crate) label: Option<sys::Label>,
+    pub(crate) end_jumps: Vec<sys::Jump>,
+    pub(crate) else_jump: Option<sys::Jump>,
+    pub(crate) stack_depth: usize,
+    pub(crate) result_offset: Option<i32>,
+}
+
+/// Local variable storage info
+#[derive(Clone, Debug)]
+pub(crate) enum LocalVar {
+    Saved(SavedRegister),
+    Stack(i32),
+}
+
+/// Binary operation type for floats
+#[derive(Clone, Copy, Debug)]
+pub enum FloatBinaryOp {
+    Min,
+    Max,
+    Copysign,
+}
+
+/// Unary operation type for floats
+#[derive(Clone, Copy, Debug)]
+pub enum FloatUnaryOp {
+    Sqrt,
+    Ceil,
+    Floor,
+    Trunc,
+    Nearest,
+}
+
+/// Unary operation type
+#[derive(Clone, Copy, Debug)]
+pub enum UnaryOp {
+    Clz64,
+    Ctz64,
+    Popcnt,
+    Popcnt64,
+}
+
+/// Division operation type
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum DivOp {
+    DivS,
+    DivU,
+    RemS,
+    RemU,
+}
+
+/// Represents a value on the operand stack during compilation
+#[derive(Clone, Debug)]
+pub(crate) enum StackValue {
+    Register(ScratchRegister),
+    FloatRegister(FloatRegister),
+    Stack(i32),
+    Const(i32),
+    ConstF32(u32),
+    ConstF64(u64),
+    Saved(SavedRegister),
+}
+
+impl StackValue {
+    #[inline(always)]
+    pub(crate) fn to_operand(&self) -> Operand {
+        match self {
+            Self::Register(r) => (*r).into(),
+            Self::FloatRegister(r) => (*r).into(),
+            Self::Stack(offset) => mem_sp_offset(*offset),
+            Self::Const(val) => (*val).into(),
+            Self::ConstF32(_) | Self::ConstF64(_) => {
+                // Float constants need to be loaded into a register first
+                // This shouldn't be called directly; use ensure_in_float_register instead
+                panic!("Float constants cannot be converted to operand directly")
+            }
+            Self::Saved(r) => (*r).into(),
+        }
+    }
+}
 
 /// WebAssembly function compiler
-#[derive(Clone, Debug)]
+///
+/// Owns its own sljit Compiler context for code generation.
 pub struct Function {
+    /// The sljit compiler instance (Option to allow temporary extraction during compilation)
+    compiler: Option<Compiler>,
     stack: Vec<StackValue>,
     blocks: Vec<Block>,
     locals: Vec<LocalVar>,
@@ -41,6 +124,25 @@ pub struct Function {
     func_types: Vec<InternalFuncType>,
 }
 
+impl std::fmt::Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Function")
+            .field("compiler", &self.compiler.as_ref().map(|_| "Compiler"))
+            .field("stack", &self.stack)
+            .field("blocks", &self.blocks)
+            .field("locals", &self.locals)
+            .field("param_count", &self.param_count)
+            .field("frame_offset", &self.frame_offset)
+            .field("local_size", &self.local_size)
+            .field("globals", &self.globals)
+            .field("memory", &self.memory)
+            .field("functions", &self.functions)
+            .field("tables", &self.tables)
+            .field("func_types", &self.func_types)
+            .finish()
+    }
+}
+
 // Helper macro for stack underflow error
 macro_rules! stack_underflow {
     () => {
@@ -49,8 +151,10 @@ macro_rules! stack_underflow {
 }
 
 impl Function {
+    /// Create a new Function with its own compiler context
     pub fn new() -> Self {
         Self {
+            compiler: Some(Compiler::new()),
             stack: vec![],
             blocks: vec![],
             locals: vec![],
@@ -65,6 +169,27 @@ impl Function {
             tables: vec![],
             func_types: vec![],
         }
+    }
+
+    /// Get a reference to the internal compiler
+    #[inline]
+    pub fn compiler(&self) -> Option<&Compiler> {
+        self.compiler.as_ref()
+    }
+
+    /// Get a mutable reference to the internal compiler
+    #[inline]
+    pub fn compiler_mut(&mut self) -> Option<&mut Compiler> {
+        self.compiler.as_mut()
+    }
+
+    /// Generate code and return the GeneratedCode
+    ///
+    /// This consumes the Function and returns the generated machine code.
+    /// Returns None if the compiler has already been consumed.
+    #[inline]
+    pub fn generate_code(mut self) -> Option<GeneratedCode> {
+        self.compiler.take().map(|c| c.generate_code())
     }
 
     /// Set globals for the compiler
@@ -437,7 +562,34 @@ impl Function {
     }
 
     /// Compile a WebAssembly function
+    ///
+    /// This uses the internal Compiler instance owned by this Function.
     pub fn compile_function<'a, B>(
+        &mut self,
+        params: &[ValType],
+        results: &[ValType],
+        locals: &[ValType],
+        body: B,
+    ) -> Result<(), CompileError>
+    where
+        B: Iterator<Item = Operator<'a>>,
+    {
+        // Extract compiler temporarily to work around borrow checker
+        let mut compiler = self
+            .compiler
+            .take()
+            .ok_or_else(|| CompileError::Invalid("Compiler already consumed".into()))?;
+
+        let result = self.compile_function_impl(&mut compiler, params, results, locals, body);
+
+        // Put the compiler back
+        self.compiler = Some(compiler);
+
+        result
+    }
+
+    /// Internal implementation of compile_function
+    fn compile_function_impl<'a, B>(
         &mut self,
         compiler: &mut Compiler,
         params: &[ValType],
@@ -2795,10 +2947,11 @@ pub fn compile_simple(
     locals: &[ValType],
     body: &[Operator],
 ) -> Result<CompiledFunction, CompileError> {
-    let mut compiler = Compiler::new();
     let mut wasm_compiler = Function::new();
-    wasm_compiler.compile_function(&mut compiler, params, results, locals, body.iter().cloned())?;
+    wasm_compiler.compile_function(params, results, locals, body.iter().cloned())?;
     Ok(CompiledFunction {
-        code: compiler.generate_code(),
+        code: wasm_compiler
+            .generate_code()
+            .ok_or_else(|| CompileError::Invalid("Compiler already consumed".into()))?,
     })
 }

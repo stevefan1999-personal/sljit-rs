@@ -1,5 +1,4 @@
 use crunchy::unroll;
-use sljit::sys::Compiler;
 use wasmparser::{Ieee32, Ieee64, Operator, Parser, Payload, ValType};
 
 use crate::CompileError;
@@ -14,7 +13,6 @@ fn compile_from_wat_with_signature(
 ) -> Result<CompiledFunction, CompileError> {
     let wasm = wat::parse_str(wat).map_err(|e| CompileError::Parse(e.to_string()))?;
 
-    let mut compiler = Compiler::new();
     let mut wasm_compiler = Function::new();
 
     for payload in Parser::new(0).parse_all(&wasm) {
@@ -35,7 +33,6 @@ fn compile_from_wat_with_signature(
                 }
 
                 wasm_compiler.compile_function(
-                    &mut compiler,
                     params,
                     results,
                     &locals_vec,
@@ -50,7 +47,7 @@ fn compile_from_wat_with_signature(
     }
 
     Ok(CompiledFunction {
-        code: compiler.generate_code(),
+        code: wasm_compiler.generate_code().ok_or_else(|| CompileError::Invalid("Failed to generate code".into()))?,
     })
 }
 
