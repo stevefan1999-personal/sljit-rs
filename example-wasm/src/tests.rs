@@ -47,7 +47,9 @@ fn compile_from_wat_with_signature(
     }
 
     Ok(CompiledFunction {
-        code: wasm_compiler.generate_code().ok_or_else(|| CompileError::Invalid("Failed to generate code".into()))?,
+        code: wasm_compiler
+            .generate_code()
+            .ok_or_else(|| CompileError::Invalid("Failed to generate code".into()))?,
     })
 }
 
@@ -67,7 +69,7 @@ fn test_simple_add() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(10, 20), 30);
     assert_eq!(f(100, 200), 300);
     assert_eq!(f(-5, 10), 5);
@@ -81,7 +83,7 @@ fn test_constant() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 42);
 }
 
@@ -105,7 +107,7 @@ fn test_local_variable() {
     let func = compile_simple(&[ValType::I32], &[ValType::I32], &[ValType::I32], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(5), 15);
     assert_eq!(f(100), 110);
 }
@@ -130,7 +132,7 @@ fn test_arithmetic() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(3, 4), 14); // 3 * 4 + 2
     assert_eq!(f(5, 6), 32); // 5 * 6 + 2
 }
@@ -151,7 +153,7 @@ fn test_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 10), 1); // 5 < 10 is true
     assert_eq!(f(10, 5), 0); // 10 < 5 is false
     assert_eq!(f(5, 5), 0); // 5 < 5 is false
@@ -181,7 +183,7 @@ fn test_simple_if() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(1), 1);
     assert_eq!(f(0), 0);
     assert_eq!(f(42), 1);
@@ -224,7 +226,7 @@ fn test_division() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(20, 3), 6);
     assert_eq!(f(100, 10), 10);
     assert_eq!(f(-20, 3), -6);
@@ -244,7 +246,7 @@ fn test_remainder() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(20, 3), 2);
     assert_eq!(f(100, 10), 0);
     assert_eq!(f(17, 5), 2);
@@ -263,7 +265,7 @@ fn test_unsigned_division() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(20, 3), 6);
     assert_eq!(f(100, 10), 10);
     // Unsigned division treats negative numbers as large positive numbers
@@ -284,7 +286,7 @@ fn test_rotation() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     // 0x12345678 rotated left by 4 bits = 0x23456781
     assert_eq!(f(0x12345678u32 as i32, 4), 0x23456781u32 as i32);
     // 1 rotated left by 1 = 2
@@ -306,7 +308,7 @@ fn test_rotation_right() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     // 0x12345678 rotated right by 4 bits = 0x81234567
     assert_eq!(f(0x12345678u32 as i32, 4), 0x81234567u32 as i32);
     // 1 rotated right by 1 = 0x80000000
@@ -325,7 +327,7 @@ fn test_clz() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 32);
     assert_eq!(f(1), 31);
     assert_eq!(f(0x80000000u32 as i32), 0);
@@ -345,7 +347,7 @@ fn test_ctz() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 32);
     assert_eq!(f(1), 0);
     assert_eq!(f(2), 1);
@@ -365,7 +367,7 @@ fn test_popcnt() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 0);
     assert_eq!(f(1), 1);
     assert_eq!(f(0xFF), 8);
@@ -387,7 +389,7 @@ fn test_bitwise_operations() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(0xFF00, 0x0FF0), 0x0F00);
     assert_eq!(f(-1, 0x12345678), 0x12345678);
 }
@@ -405,7 +407,7 @@ fn test_shift_operations() {
     let func_shl = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f_shl = func_shl.as_fn_2();
+    let f_shl = func_shl.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f_shl(1, 4), 16);
     assert_eq!(f_shl(0xFF, 8), 0xFF00);
 
@@ -420,7 +422,7 @@ fn test_shift_operations() {
     let func_shrs = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f_shrs = func_shrs.as_fn_2();
+    let f_shrs = func_shrs.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f_shrs(16, 2), 4);
     assert_eq!(f_shrs(-16, 2), -4); // Arithmetic shift preserves sign
 
@@ -435,7 +437,7 @@ fn test_shift_operations() {
     let func_shru = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f_shru = func_shru.as_fn_2();
+    let f_shru = func_shru.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f_shru(16, 2), 4);
     // Logical shift fills with zeros
     assert_eq!(f_shru(-1i32, 1), 0x7FFFFFFFi32);
@@ -454,7 +456,7 @@ fn test_i64_basic() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // Wrap truncates to lower 32 bits: 0x89ABCDEF
     assert_eq!(f(), 0x89ABCDEFu32 as i32);
 }
@@ -471,7 +473,7 @@ fn test_eqz() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 1); // 0 == 0 is true
     assert_eq!(f(1), 0); // 1 == 0 is false
     assert_eq!(f(-1), 0); // -1 == 0 is false
@@ -492,7 +494,7 @@ fn test_select() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(1), 10); // cond != 0, select val1
     assert_eq!(f(0), 20); // cond == 0, select val2
     assert_eq!(f(42), 10); // cond != 0, select val1
@@ -511,7 +513,7 @@ fn test_subtraction() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(20, 8), 12);
     assert_eq!(f(5, 10), -5);
     assert_eq!(f(-5, -10), 5);
@@ -530,7 +532,7 @@ fn test_or_operation() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(0xF0, 0x0F), 0xFF);
     assert_eq!(f(0xFF00, 0x00FF), 0xFFFF);
     assert_eq!(f(0, 0x12345678), 0x12345678);
@@ -549,7 +551,7 @@ fn test_xor_operation() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(0xFF, 0xFF), 0);
     assert_eq!(f(0xFFFF0000u32 as i32, 0x0000FFFFu32 as i32), -1);
     assert_eq!(f(0x12345678, 0), 0x12345678);
@@ -568,7 +570,7 @@ fn test_unsigned_remainder() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(20, 3), 2);
     assert_eq!(f(100, 7), 2);
     // Unsigned remainder treats negative numbers as large positive numbers
@@ -589,7 +591,7 @@ fn test_eq_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 5), 1);
     assert_eq!(f(5, 10), 0);
     assert_eq!(f(-1, -1), 1);
@@ -609,7 +611,7 @@ fn test_ne_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 5), 0);
     assert_eq!(f(5, 10), 1);
     assert_eq!(f(-1, 1), 1);
@@ -628,7 +630,7 @@ fn test_lt_u_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 10), 1);
     assert_eq!(f(10, 5), 0);
     // -1 as unsigned is larger than any positive number
@@ -649,7 +651,7 @@ fn test_gt_s_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(10, 5), 1);
     assert_eq!(f(5, 10), 0);
     assert_eq!(f(-1, -2), 1);
@@ -669,7 +671,7 @@ fn test_gt_u_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(10, 5), 1);
     assert_eq!(f(5, 10), 0);
     // -1 as unsigned is larger than any positive number
@@ -690,7 +692,7 @@ fn test_le_s_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 10), 1);
     assert_eq!(f(10, 5), 0);
     assert_eq!(f(5, 5), 1);
@@ -710,7 +712,7 @@ fn test_le_u_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(5, 10), 1);
     assert_eq!(f(10, 5), 0);
     assert_eq!(f(5, 5), 1);
@@ -730,7 +732,7 @@ fn test_ge_s_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(10, 5), 1);
     assert_eq!(f(5, 10), 0);
     assert_eq!(f(5, 5), 1);
@@ -750,7 +752,7 @@ fn test_ge_u_comparison() {
     let func = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f(10, 5), 1);
     assert_eq!(f(5, 10), 0);
     assert_eq!(f(5, 5), 1);
@@ -808,7 +810,7 @@ fn test_loop_br() {
     )
     .expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 0); // sum of nothing
     assert_eq!(f(1), 0); // 0
     assert_eq!(f(5), 10); // 0+1+2+3+4 = 10
@@ -827,7 +829,7 @@ fn test_drop() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 100);
 }
 
@@ -844,7 +846,7 @@ fn test_nop() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 42);
 }
 
@@ -863,7 +865,7 @@ fn test_local_tee() {
     let func = compile_simple(&[ValType::I32], &[ValType::I32], &[ValType::I32], &body)
         .expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(5), 15);
     assert_eq!(f(0), 10);
 }
@@ -887,7 +889,7 @@ fn test_return_early() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(0), 0); // early return
     assert_eq!(f(1), 42); // normal path
     assert_eq!(f(5), 42);
@@ -918,7 +920,7 @@ fn test_br_if() {
     let func =
         compile_simple(&[ValType::I32], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     assert_eq!(f(10), 1);
     assert_eq!(f(5), 0);
     assert_eq!(f(0), 0);
@@ -940,7 +942,7 @@ fn test_i64_arithmetic() {
     let func_add = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f_add = func_add.as_fn_2();
+    let f_add = func_add.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f_add(10, 20), 30);
     assert_eq!(f_add(-5, 10), 5);
 
@@ -958,7 +960,7 @@ fn test_i64_arithmetic() {
     let func_sub = compile_simple(&[ValType::I32, ValType::I32], &[ValType::I32], &[], &body)
         .expect("Compilation failed");
 
-    let f_sub = func_sub.as_fn_2();
+    let f_sub = func_sub.as_fn::<fn(i32, i32) -> i32>();
     assert_eq!(f_sub(20, 8), 12);
     assert_eq!(f_sub(5, 10), -5);
 }
@@ -976,7 +978,7 @@ fn test_i64_bitwise() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 0x0F000F00u32 as i32);
 
     let body = [
@@ -989,7 +991,7 @@ fn test_i64_bitwise() {
 
     let func_or = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_or = func_or.as_fn_0();
+    let f_or = func_or.as_fn::<fn() -> i32>();
     assert_eq!(f_or(), 0xFFFF);
 
     let body = [
@@ -1002,7 +1004,7 @@ fn test_i64_bitwise() {
 
     let func_xor = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_xor = func_xor.as_fn_0();
+    let f_xor = func_xor.as_fn::<fn() -> i32>();
     assert_eq!(f_xor(), 0xF0F0);
 }
 
@@ -1019,7 +1021,7 @@ fn test_i64_shifts() {
 
     let func_shl = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_shl = func_shl.as_fn_0();
+    let f_shl = func_shl.as_fn::<fn() -> i32>();
     // 1 << 32 = 0x100000000, wrapped to 32 bits = 0
     assert_eq!(f_shl(), 0);
 
@@ -1034,7 +1036,7 @@ fn test_i64_shifts() {
 
     let func_shrs = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_shrs = func_shrs.as_fn_0();
+    let f_shrs = func_shrs.as_fn::<fn() -> i32>();
     assert_eq!(f_shrs(), -4);
 
     // Test shr_u
@@ -1048,7 +1050,7 @@ fn test_i64_shifts() {
 
     let func_shru = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_shru = func_shru.as_fn_0();
+    let f_shru = func_shru.as_fn::<fn() -> i32>();
     assert_eq!(f_shru(), 4);
 }
 
@@ -1069,7 +1071,7 @@ fn test_i64_extend() {
 
     let func_s = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_s = func_s.as_fn_0();
+    let f_s = func_s.as_fn::<fn() -> i32>();
     // -1 sign extended: upper 32 bits should be 0xFFFFFFFF = -1
     assert_eq!(f_s(), -1);
 
@@ -1085,7 +1087,7 @@ fn test_i64_extend() {
 
     let func_u = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f_u = func_u.as_fn_0();
+    let f_u = func_u.as_fn::<fn() -> i32>();
     // -1 zero extended: upper 32 bits should be 0
     assert_eq!(f_u(), 0);
 }
@@ -1131,7 +1133,7 @@ fn test_memory_i32_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 42);
 }
@@ -1168,7 +1170,7 @@ fn test_memory_i32_store_load_with_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 123);
 }
@@ -1206,7 +1208,7 @@ fn test_memory_i8_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f_u = func_u.as_fn_1();
+    let f_u = func_u.as_fn::<fn(i32) -> i32>();
     assert_eq!(f_u(memory_base), 255); // Unsigned load: 0xFF = 255
 
     // Test signed load
@@ -1239,7 +1241,7 @@ fn test_memory_i8_store_load() {
     let mut memory2 = [0u8; 64];
     let memory_base2 = memory2.as_mut_ptr() as i32;
 
-    let f_s = func_s.as_fn_1();
+    let f_s = func_s.as_fn::<fn(i32) -> i32>();
     assert_eq!(f_s(memory_base2), -1); // Signed load: 0xFF sign-extended = -1
 }
 
@@ -1275,7 +1277,7 @@ fn test_memory_i16_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f_u = func_u.as_fn_1();
+    let f_u = func_u.as_fn::<fn(i32) -> i32>();
     assert_eq!(f_u(memory_base), 65535); // Unsigned load: 0xFFFF = 65535
 
     // Test signed load
@@ -1308,7 +1310,7 @@ fn test_memory_i16_store_load() {
     let mut memory2 = [0u8; 64];
     let memory_base2 = memory2.as_mut_ptr() as i32;
 
-    let f_s = func_s.as_fn_1();
+    let f_s = func_s.as_fn::<fn(i32) -> i32>();
     assert_eq!(f_s(memory_base2), -1); // Signed load: 0xFFFF sign-extended = -1
 }
 
@@ -1388,7 +1390,7 @@ fn test_memory_multiple_stores_loads() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 60); // 10 + 20 + 30 = 60
 }
@@ -1428,7 +1430,7 @@ fn test_memory_dynamic_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
 
     // Test storing at different offsets
     assert_eq!(f(memory_base, 0), 99);
@@ -1473,7 +1475,7 @@ fn test_memory_i64_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0x123456789ABCDEF = 0x89ABCDEF
     assert_eq!(result, 0x89ABCDEFu32 as i32);
@@ -1519,7 +1521,7 @@ fn test_memory_i64_store_load_full_value() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 0xFEDCBA9876543210 = 0xFEDCBA98
     assert_eq!(result, 0xFEDCBA98u32 as i32);
@@ -1558,7 +1560,7 @@ fn test_memory_i64_load8_unsigned() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 255); // Unsigned: 0xFF = 255
 }
@@ -1596,7 +1598,7 @@ fn test_memory_i64_load8_signed() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Sign-extended: 0xFF -> -1
 }
@@ -1634,7 +1636,7 @@ fn test_memory_i64_load16_unsigned() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 65535); // Unsigned: 0xFFFF = 65535
 }
@@ -1672,7 +1674,7 @@ fn test_memory_i64_load16_signed() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Sign-extended: 0xFFFF -> -1
 }
@@ -1715,7 +1717,7 @@ fn test_memory_i64_load32_unsigned() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, 0); // Upper 32 bits should be 0 (zero-extended)
 }
@@ -1758,7 +1760,7 @@ fn test_memory_i64_load32_signed() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     assert_eq!(result, -1); // Upper 32 bits should be 0xFFFFFFFF (sign-extended)
 }
@@ -1798,7 +1800,7 @@ fn test_memory_i64_with_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0xDEADBEEFCAFEBABE = 0xCAFEBABE
     assert_eq!(result, 0xCAFEBABEu32 as i32);
@@ -1864,7 +1866,7 @@ fn test_memory_i64_multiple_stores_loads() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of (0x1111111111111111 + 0x2222222222222222) = 0x3333333333333333
     // Lower 32 bits = 0x33333333
@@ -1909,7 +1911,7 @@ fn test_memory_f32_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Should get back the same bits: 0x40490FDB
     assert_eq!(result as u32, 0x40490FDB);
@@ -1950,7 +1952,7 @@ fn test_memory_f32_store_load_with_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // 10.0f = 0x41200000
     assert_eq!(result as u32, 0x41200000);
@@ -2016,7 +2018,7 @@ fn test_memory_f32_multiple_stores_loads() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // 1.5 + 2.5 = 4.0f = 0x40800000
     assert_eq!(result as u32, 0x40800000);
@@ -2059,7 +2061,7 @@ fn test_memory_f64_store_load() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Lower 32 bits of 0x400921FB54442D18 = 0x54442D18
     assert_eq!(result as u32, 0x54442D18);
@@ -2104,7 +2106,7 @@ fn test_memory_f64_store_load_upper_bits() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 0x400921FB54442D18 = 0x400921FB
     assert_eq!(result as u32, 0x400921FB);
@@ -2148,7 +2150,7 @@ fn test_memory_f64_store_load_with_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // Upper 32 bits of 10.0 (0x4024000000000000) = 0x40240000
     assert_eq!(result as u32, 0x40240000);
@@ -2218,7 +2220,7 @@ fn test_memory_f64_multiple_stores_loads() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
     let result = f(memory_base);
     // 1.5 + 2.5 = 4.0 = 0x4010000000000000, upper bits = 0x40100000
     assert_eq!(result as u32, 0x40100000);
@@ -2259,7 +2261,7 @@ fn test_memory_f32_dynamic_offset() {
     let mut memory = [0u8; 64];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
 
     // Test storing at different offsets
     assert_eq!(f(memory_base, 0) as u32, 0x42280000);
@@ -2305,7 +2307,7 @@ fn test_memory_f64_dynamic_offset() {
     let mut memory = [0u8; 128];
     let memory_base = memory.as_mut_ptr() as i32;
 
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
 
     // Test storing at different offsets - upper 32 bits of 42.0 = 0x40450000
     assert_eq!(f(memory_base, 0) as u32, 0x40450000);
@@ -2336,7 +2338,7 @@ fn test_f32_add() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 4.0f = 0x40800000
     assert_eq!(f() as u32, 0x40800000);
 }
@@ -2358,7 +2360,7 @@ fn test_f32_sub() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0f = 0x40400000
     assert_eq!(f() as u32, 0x40400000);
 }
@@ -2380,7 +2382,7 @@ fn test_f32_mul() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 12.0f = 0x41400000
     assert_eq!(f() as u32, 0x41400000);
 }
@@ -2402,7 +2404,7 @@ fn test_f32_div() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0f = 0x40A00000
     assert_eq!(f() as u32, 0x40A00000);
 }
@@ -2424,7 +2426,7 @@ fn test_f32_min() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0f = 0x40400000
     assert_eq!(f() as u32, 0x40400000);
 }
@@ -2446,7 +2448,7 @@ fn test_f32_max() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0f = 0x40A00000
     assert_eq!(f() as u32, 0x40A00000);
 }
@@ -2468,7 +2470,7 @@ fn test_f32_copysign() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -3.0f = 0xC0400000
     assert_eq!(f() as u32, 0xC0400000);
 }
@@ -2489,7 +2491,7 @@ fn test_f32_neg() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -5.0f = 0xC0A00000
     assert_eq!(f() as u32, 0xC0A00000);
 }
@@ -2508,7 +2510,7 @@ fn test_f32_abs() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0f = 0x40A00000
     assert_eq!(f() as u32, 0x40A00000);
 }
@@ -2527,7 +2529,7 @@ fn test_f32_sqrt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 4.0f = 0x40800000
     assert_eq!(f() as u32, 0x40800000);
 }
@@ -2546,7 +2548,7 @@ fn test_f32_ceil() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0f = 0x40400000
     assert_eq!(f() as u32, 0x40400000);
 }
@@ -2565,7 +2567,7 @@ fn test_f32_floor() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 2.0f = 0x40000000
     assert_eq!(f() as u32, 0x40000000);
 }
@@ -2584,7 +2586,7 @@ fn test_f32_trunc() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 2.0f = 0x40000000
     assert_eq!(f() as u32, 0x40000000);
 }
@@ -2603,7 +2605,7 @@ fn test_f32_nearest() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // nearest(2.5) should round to 2.0 (banker's rounding)
     // 2.0f = 0x40000000
     assert_eq!(f() as u32, 0x40000000);
@@ -2627,7 +2629,7 @@ fn test_f32_eq() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 
     // Test inequality
@@ -2643,7 +2645,7 @@ fn test_f32_eq() {
     ];
 
     let func2 = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f2 = func2.as_fn_0();
+    let f2 = func2.as_fn::<fn() -> i32>();
     assert_eq!(f2(), 0); // false
 }
 
@@ -2663,7 +2665,7 @@ fn test_f32_ne() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -2683,7 +2685,7 @@ fn test_f32_lt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 
     // Test not less than
@@ -2699,7 +2701,7 @@ fn test_f32_lt() {
     ];
 
     let func2 = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f2 = func2.as_fn_0();
+    let f2 = func2.as_fn::<fn() -> i32>();
     assert_eq!(f2(), 0); // false
 }
 
@@ -2719,7 +2721,7 @@ fn test_f32_gt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -2739,7 +2741,7 @@ fn test_f32_le() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -2759,7 +2761,7 @@ fn test_f32_ge() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -2785,7 +2787,7 @@ fn test_f64_add() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 4.0 = 0x4010000000000000, upper 32 bits = 0x40100000
     assert_eq!(f() as u32, 0x40100000);
 }
@@ -2810,7 +2812,7 @@ fn test_f64_sub() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 = 0x4008000000000000, upper 32 bits = 0x40080000
     assert_eq!(f() as u32, 0x40080000);
 }
@@ -2835,7 +2837,7 @@ fn test_f64_mul() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 12.0 = 0x4028000000000000, upper 32 bits = 0x40280000
     assert_eq!(f() as u32, 0x40280000);
 }
@@ -2860,7 +2862,7 @@ fn test_f64_div() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0 = 0x4014000000000000, upper 32 bits = 0x40140000
     assert_eq!(f() as u32, 0x40140000);
 }
@@ -2885,7 +2887,7 @@ fn test_f64_min() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 = 0x4008000000000000, upper 32 bits = 0x40080000
     assert_eq!(f() as u32, 0x40080000);
 }
@@ -2910,7 +2912,7 @@ fn test_f64_max() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0 = 0x4014000000000000, upper 32 bits = 0x40140000
     assert_eq!(f() as u32, 0x40140000);
 }
@@ -2935,7 +2937,7 @@ fn test_f64_copysign() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -3.0 = 0xC008000000000000, upper 32 bits = 0xC0080000
     assert_eq!(f() as u32, 0xC0080000);
 }
@@ -2959,7 +2961,7 @@ fn test_f64_neg() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -5.0 = 0xC014000000000000, upper 32 bits = 0xC0140000
     assert_eq!(f() as u32, 0xC0140000);
 }
@@ -2981,7 +2983,7 @@ fn test_f64_abs() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 5.0 = 0x4014000000000000, upper 32 bits = 0x40140000
     assert_eq!(f() as u32, 0x40140000);
 }
@@ -3003,7 +3005,7 @@ fn test_f64_sqrt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 4.0 = 0x4010000000000000, upper 32 bits = 0x40100000
     assert_eq!(f() as u32, 0x40100000);
 }
@@ -3025,7 +3027,7 @@ fn test_f64_ceil() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 = 0x4008000000000000, upper 32 bits = 0x40080000
     assert_eq!(f() as u32, 0x40080000);
 }
@@ -3047,7 +3049,7 @@ fn test_f64_floor() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 2.0 = 0x4000000000000000, upper 32 bits = 0x40000000
     assert_eq!(f() as u32, 0x40000000);
 }
@@ -3069,7 +3071,7 @@ fn test_f64_trunc() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -2.0 = 0xC000000000000000, upper 32 bits = 0xC0000000
     assert_eq!(f() as u32, 0xC0000000);
 }
@@ -3091,7 +3093,7 @@ fn test_f64_nearest() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // nearest(2.5) should round to 2.0 (banker's rounding)
     // 2.0 = 0x4000000000000000, upper 32 bits = 0x40000000
     assert_eq!(f() as u32, 0x40000000);
@@ -3115,7 +3117,7 @@ fn test_f64_eq() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3135,7 +3137,7 @@ fn test_f64_ne() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3155,7 +3157,7 @@ fn test_f64_lt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3175,7 +3177,7 @@ fn test_f64_gt() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3195,7 +3197,7 @@ fn test_f64_le() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3215,7 +3217,7 @@ fn test_f64_ge() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // true
 }
 
@@ -3234,7 +3236,7 @@ fn test_f32_convert_i32_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -10.0f = 0xC1200000
     assert_eq!(f() as u32, 0xC1200000);
 }
@@ -3252,7 +3254,7 @@ fn test_f32_convert_i32_u() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 10.0f = 0x41200000
     assert_eq!(f() as u32, 0x41200000);
 }
@@ -3273,7 +3275,7 @@ fn test_f64_convert_i32_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -10.0 = 0xC024000000000000, upper 32 bits = 0xC0240000
     assert_eq!(f() as u32, 0xC0240000);
 }
@@ -3294,7 +3296,7 @@ fn test_f64_convert_i64_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 1000000.0 = 0x412E848000000000, upper 32 bits = 0x412E8480
     assert_eq!(f() as u32, 0x412E8480);
 }
@@ -3313,7 +3315,7 @@ fn test_i32_trunc_f32_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), -2);
 }
 
@@ -3331,7 +3333,7 @@ fn test_i32_trunc_f32_u() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 2);
 }
 
@@ -3349,7 +3351,7 @@ fn test_i32_trunc_f64_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), -100);
 }
 
@@ -3368,7 +3370,7 @@ fn test_i64_trunc_f64_s() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -1000000 as i32
     assert_eq!(f(), -1000000);
 }
@@ -3390,7 +3392,7 @@ fn test_f32_demote_f64() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // PI as f32 = 0x40490FDB
     assert_eq!(f() as u32, 0x40490FDB);
 }
@@ -3413,7 +3415,7 @@ fn test_f64_promote_f32() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 = 0x4008000000000000, upper 32 bits = 0x40080000
     assert_eq!(f() as u32, 0x40080000);
 }
@@ -3440,7 +3442,7 @@ fn test_f32_reinterpret_i32() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 + 1.0 = 4.0f = 0x40800000
     assert_eq!(f() as u32, 0x40800000);
 }
@@ -3467,7 +3469,7 @@ fn test_f64_reinterpret_i64() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 3.0 + 1.0 = 4.0 = 0x4010000000000000, upper 32 bits = 0x40100000
     assert_eq!(f() as u32, 0x40100000);
 }
@@ -3499,7 +3501,7 @@ fn test_f32_combined_operations() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // (3.0 + 2.0) * 4.0 - 1.0 = 5.0 * 4.0 - 1.0 = 20.0 - 1.0 = 19.0
     // 19.0f = 0x41980000
     assert_eq!(f() as u32, 0x41980000);
@@ -3527,7 +3529,7 @@ fn test_f64_combined_operations() {
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
 
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // sqrt(16.0) + abs(-2.0) = 4.0 + 2.0 = 6.0
     // 6.0 = 0x4018000000000000, upper 32 bits = 0x40180000
     assert_eq!(f() as u32, 0x40180000);
@@ -3622,7 +3624,7 @@ fn test_iterative_fibonacci() {
     )
     .expect("Compilation failed");
 
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
 
     // Test Fibonacci sequence:
     // fib(0) = 0
@@ -3707,7 +3709,7 @@ fn test_br_table_simple() {
 
     let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
         .expect("Compilation failed");
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
 
     assert_eq!(f(0), 10); // case 0
     assert_eq!(f(1), 20); // case 1
@@ -3766,7 +3768,7 @@ fn test_br_table_with_computation() {
 
     let func = compile_from_wat_with_signature(wat, &[ValType::I32, ValType::I32], &[ValType::I32])
         .expect("Compilation failed");
-    let f = func.as_fn_2();
+    let f = func.as_fn::<fn(i32, i32) -> i32>();
 
     // Test case 0: add 10
     assert_eq!(f(0, 5), 15); // 5 + 10 = 15
@@ -3811,7 +3813,7 @@ fn test_br_table_fallthrough() {
 
     let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
         .expect("Compilation failed");
-    let f = func.as_fn_1();
+    let f = func.as_fn::<fn(i32) -> i32>();
 
     // All cases should return 42
     assert_eq!(f(0), 42);
@@ -3837,7 +3839,7 @@ fn test_i64_mul() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 1000000 * 1000000 = 1000000000000, lower 32 bits = 0xE8D4A51000 & 0xFFFFFFFF = 0xD4A51000
     assert_eq!(f() as u32, 0xD4A51000);
 }
@@ -3854,7 +3856,7 @@ fn test_i64_div_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 33); // 100 / 3 = 33
 }
 
@@ -3870,7 +3872,7 @@ fn test_i64_div_s_negative() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), -33); // -100 / 3 = -33
 }
 
@@ -3886,7 +3888,7 @@ fn test_i64_div_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 33); // 100 / 3 = 33
 }
 
@@ -3902,7 +3904,7 @@ fn test_i64_rem_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 100 % 3 = 1
 }
 
@@ -3918,7 +3920,7 @@ fn test_i64_rem_s_negative() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), -1); // -100 % 3 = -1
 }
 
@@ -3934,7 +3936,7 @@ fn test_i64_rem_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 2); // 100 % 7 = 2
 }
 
@@ -3952,7 +3954,7 @@ fn test_i64_rotl() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 0x0123456789ABCDEF rotated left by 4 = 0x123456789ABCDEF0
     // Lower 32 bits = 0x9ABCDEF0
     assert_eq!(f() as u32, 0x9ABCDEF0);
@@ -3972,7 +3974,7 @@ fn test_i64_rotr() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 0x0123456789ABCDEF rotated right by 4 = 0xF0123456789ABCDE
     // Lower 32 bits = 0x789ABCDE
     assert_eq!(f() as u32, 0x789ABCDE);
@@ -3991,7 +3993,7 @@ fn test_i64_clz() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 0x0000000100000000 has 31 leading zeros
     assert_eq!(f(), 31);
 }
@@ -4007,7 +4009,7 @@ fn test_i64_clz_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 64); // All zeros
 }
 
@@ -4024,7 +4026,7 @@ fn test_i64_ctz() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 0x0000000100000000 has 32 trailing zeros
     assert_eq!(f(), 32);
 }
@@ -4040,7 +4042,7 @@ fn test_i64_ctz_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 64); // All zeros
 }
 
@@ -4057,7 +4059,7 @@ fn test_i64_popcnt() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 64); // All 64 bits set
 }
 
@@ -4074,7 +4076,7 @@ fn test_i64_popcnt_mixed() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 32); // Half of 64 bits set
 }
 
@@ -4088,7 +4090,7 @@ fn test_i64_eqz() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 0 == 0 is true
 }
 
@@ -4102,7 +4104,7 @@ fn test_i64_eqz_nonzero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 0); // 42 == 0 is false
 }
 
@@ -4121,7 +4123,7 @@ fn test_i64_eq() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // Equal
 }
 
@@ -4136,7 +4138,7 @@ fn test_i64_ne() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // Not equal
 }
 
@@ -4151,7 +4153,7 @@ fn test_i64_lt_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // -1 < 1 (signed)
 }
 
@@ -4166,7 +4168,7 @@ fn test_i64_lt_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 1 < 0xFFFFFFFFFFFFFFFF (unsigned)
 }
 
@@ -4181,7 +4183,7 @@ fn test_i64_gt_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 1 > -1 (signed)
 }
 
@@ -4196,7 +4198,7 @@ fn test_i64_gt_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 0xFFFFFFFFFFFFFFFF > 1 (unsigned)
 }
 
@@ -4211,7 +4213,7 @@ fn test_i64_le_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 5 <= 5
 }
 
@@ -4226,7 +4228,7 @@ fn test_i64_le_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 100 <= 200
 }
 
@@ -4241,7 +4243,7 @@ fn test_i64_ge_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 100 >= 100
 }
 
@@ -4256,7 +4258,7 @@ fn test_i64_ge_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 1); // 0xFFFFFFFFFFFFFFFF >= 1 (unsigned)
 }
 
@@ -4277,7 +4279,7 @@ fn test_i64_trunc_f32_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), -100);
 }
 
@@ -4294,7 +4296,7 @@ fn test_i64_trunc_f32_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 100);
 }
 
@@ -4311,7 +4313,7 @@ fn test_i64_trunc_f64_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 100);
 }
 
@@ -4327,7 +4329,7 @@ fn test_i32_trunc_f64_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 100);
 }
 
@@ -4342,7 +4344,7 @@ fn test_f32_convert_i64_s() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // -1000000.0f = 0xC9742400
     assert_eq!(f() as u32, 0xC9742400);
 }
@@ -4358,7 +4360,7 @@ fn test_f32_convert_i64_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 1000000.0f = 0x49742400
     assert_eq!(f() as u32, 0x49742400);
 }
@@ -4379,7 +4381,7 @@ fn test_f64_convert_i32_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 4294967295.0 = 0x41EFFFFFFFE00000, upper 32 bits = 0x41EFFFFF
     assert_eq!(f() as u32, 0x41EFFFFF);
 }
@@ -4398,7 +4400,7 @@ fn test_f64_convert_i64_u() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 1000000.0 = 0x412E848000000000, upper 32 bits = 0x412E8480
     assert_eq!(f() as u32, 0x412E8480);
 }
@@ -4419,7 +4421,7 @@ fn test_i32_wrap_i64_edge() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     assert_eq!(f(), 0x42); // Only lower 32 bits
 }
 
@@ -4438,7 +4440,7 @@ fn test_i64_extend_i32_s_edge() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // INT32_MIN sign-extended should have all 1s in upper 32 bits
     assert_eq!(f(), -1);
 }
@@ -4458,7 +4460,7 @@ fn test_i64_extend_i32_u_edge() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // UINT32_MAX zero-extended should have all 0s in upper 32 bits
     assert_eq!(f(), 0);
 }
@@ -4480,7 +4482,7 @@ fn test_f32_neg_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // neg(-0.0) = +0.0
     assert_eq!(f() as u32, 0x00000000);
 }
@@ -4501,7 +4503,7 @@ fn test_f64_neg_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // neg(-0.0) = +0.0, upper 32 bits = 0x00000000
     assert_eq!(f() as u32, 0x00000000);
 }
@@ -4519,7 +4521,7 @@ fn test_f32_abs_negative_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // abs(-0.0) = +0.0
     assert_eq!(f() as u32, 0x00000000);
 }
@@ -4540,7 +4542,7 @@ fn test_f64_abs_negative_zero() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // abs(-0.0) = +0.0, upper 32 bits = 0x00000000
     assert_eq!(f() as u32, 0x00000000);
 }
@@ -4561,7 +4563,7 @@ fn test_f32_copysign_zero_signs() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // copysign(1.0, -0.0) = -1.0
     assert_eq!(f() as u32, 0xBF800000);
 }
@@ -4585,7 +4587,7 @@ fn test_f64_copysign_zero_signs() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // copysign(1.0, -0.0) = -1.0, upper 32 bits = 0xBFF00000
     assert_eq!(f() as u32, 0xBFF00000);
 }
@@ -4607,7 +4609,7 @@ fn test_i32_add_overflow() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // INT32_MAX + 1 wraps to INT32_MIN
     assert_eq!(f(), i32::MIN);
 }
@@ -4625,7 +4627,7 @@ fn test_i32_sub_underflow() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // INT32_MIN - 1 wraps to INT32_MAX
     assert_eq!(f(), i32::MAX);
 }
@@ -4641,7 +4643,7 @@ fn test_i32_mul_overflow() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // 0x10000 * 0x10000 = 0x100000000, wraps to 0
     assert_eq!(f(), 0);
 }
@@ -4662,7 +4664,7 @@ fn test_i64_add_overflow() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // INT64_MAX + 1 wraps to INT64_MIN, upper 32 bits = 0x80000000
     assert_eq!(f() as u32, 0x80000000);
 }
@@ -4683,7 +4685,7 @@ fn test_i64_sub_underflow() {
     ];
 
     let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
-    let f = func.as_fn_0();
+    let f = func.as_fn::<fn() -> i32>();
     // INT64_MIN - 1 wraps to INT64_MAX, upper 32 bits = 0x7FFFFFFF
     assert_eq!(f() as u32, 0x7FFFFFFF);
 }

@@ -2919,24 +2919,29 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
+    /// Transmute the compiled code to a function pointer of the specified type.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the type `F` matches the actual signature
+    /// of the compiled WebAssembly function. Mismatched types will result in
+    /// undefined behavior.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// // For a function with no parameters returning i32:
+    /// let f = compiled.as_fn::<fn() -> i32>();
+    ///
+    /// // For a function with two i32 parameters returning i32:
+    /// let f = compiled.as_fn::<fn(i32, i32) -> i32>();
+    ///
+    /// // For a function with no return value:
+    /// let f = compiled.as_fn::<fn(i32)>();
+    /// ```
     #[inline(always)]
-    pub fn as_fn_0(&self) -> fn() -> i32 {
-        unsafe { std::mem::transmute(self.code.get()) }
-    }
-
-    #[inline(always)]
-    pub fn as_fn_1(&self) -> fn(i32) -> i32 {
-        unsafe { std::mem::transmute(self.code.get()) }
-    }
-
-    #[inline(always)]
-    pub fn as_fn_2(&self) -> fn(i32, i32) -> i32 {
-        unsafe { std::mem::transmute(self.code.get()) }
-    }
-
-    #[inline(always)]
-    pub fn as_fn_3(&self) -> fn(i32, i32, i32) -> i32 {
-        unsafe { std::mem::transmute(self.code.get()) }
+    pub fn as_fn<F>(&self) -> F {
+        unsafe { std::mem::transmute_copy(&self.code.get()) }
     }
 }
 

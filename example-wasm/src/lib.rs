@@ -47,9 +47,8 @@ pub mod engine;
 
 // Re-export core types for public API
 pub use types::{
-    CompileError, FuncIdx, FuncType, FunctionEntry, GlobalIdx, GlobalInfo,
-    InstantiationError, MemoryIdx, MemoryInfo, RefType, TableEntry, TableIdx, Trap,
-    TrapKind, ValType, Value,
+    CompileError, FuncIdx, FuncType, FunctionEntry, GlobalIdx, GlobalInfo, InstantiationError,
+    MemoryIdx, MemoryInfo, RefType, TableEntry, TableIdx, Trap, TrapKind, ValType, Value,
 };
 
 // Re-export engine types
