@@ -192,6 +192,7 @@ pub struct TableEntry {
     pub size: u32,
 }
 
+pub mod trampoline;
 pub mod instance;
 pub mod module;
 pub mod store;

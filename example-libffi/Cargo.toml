@@ -1,0 +1,11 @@
+[package]
+name = "example-libffi"
+authors.workspace = true
+edition.workspace = true
+keywords.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+libffi = "5.1.0"
+sljit = { version = "0.4.0", path = ".." }

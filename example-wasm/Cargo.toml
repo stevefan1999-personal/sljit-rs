@@ -8,6 +8,7 @@ version.workspace = true
 
 [dependencies]
 bitvec = { version = "1.0", default-features = false }
+libffi = "5.1.0"
 sljit = { path = ".." }
 wasmparser = { version = "0.244.0", default-features = false }
 wat = { version = "1.242.0", default-features = false }

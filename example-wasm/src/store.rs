@@ -11,10 +11,8 @@ use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-use sljit::sys::{Compiler, SLJIT_ARG_TYPE_W};
-use sljit::{Emitter, JumpType, SavedRegister, ScratchRegister, regs};
-
 use crate::Engine;
+use crate::trampoline::{LibffiTrampoline, create_libffi_trampoline};
 use crate::types::{
     FuncIdx, FuncType, GlobalIdx, MemoryIdx, RefType, TableIdx, Trap, TrapKind, ValType, Value,
 };
@@ -47,7 +45,7 @@ pub fn with_store_context<R>(store: &mut Store, f: impl FnOnce() -> R) -> R {
 
 /// Get the current Store from global context (used by trampolines)
 /// Returns None if no Store context is active
-fn get_current_store() -> Option<*mut Store> {
+pub(crate) fn get_current_store() -> Option<*mut Store> {
     let ptr = CURRENT_STORE.load(Ordering::SeqCst);
     if ptr.is_null() { None } else { Some(ptr) }
 }
@@ -447,11 +445,6 @@ pub struct HostFunc {
     pub trampoline_ptr: usize,
 }
 
-/// Storage for generated trampoline code to keep it alive
-pub struct TrampolineCode {
-    _code: sljit::sys::GeneratedCode,
-    pub ptr: usize,
-}
 
 impl Func {
     /// Create a new host function (trampoline will be generated when added to store)
@@ -531,8 +524,8 @@ pub struct Store {
     funcs: Vec<Func>,
     /// Fuel for execution limits - optional
     fuel: Option<u64>,
-    /// Generated trampolines for host functions (kept alive here)
-    trampolines: Vec<TrampolineCode>,
+    /// Generated libffi trampolines for host functions (kept alive here)
+    trampolines: Vec<LibffiTrampoline>,
 }
 
 impl std::fmt::Debug for Store {
@@ -674,194 +667,20 @@ impl Store {
     // ========== Function operations ==========
 
     /// Allocate a new function and return its index
-    /// For host functions, this also generates a JIT trampoline
+    /// For host functions, this also generates a libffi trampoline
     pub fn alloc_func(&mut self, mut func: Func) -> FuncIdx {
         let idx = FuncIdx(self.funcs.len() as u32);
 
-        // For host functions, generate a trampoline
-        if let Func::Host(ref mut hf) = func
-            && let Some(trampoline) = self.generate_host_trampoline(idx, &hf.func_type)
-        {
-            hf.trampoline_ptr = trampoline.ptr;
-            self.trampolines.push(trampoline);
+        // For host functions, generate a libffi trampoline
+        if let Func::Host(ref mut hf) = func {
+            if let Some(trampoline) = create_libffi_trampoline(idx, &hf.func_type, hf.callback.clone()) {
+                hf.trampoline_ptr = trampoline.fn_ptr;
+                self.trampolines.push(trampoline);
+            }
         }
 
         self.funcs.push(func);
         idx
-    }
-
-    /// Generate a JIT trampoline for a host function
-    ///
-    /// The trampoline is callable with the standard wasm calling convention:
-    /// `fn(arg0, arg1, ...) -> result` (NO store_ptr - it comes from TLS)
-    ///
-    /// It internally calls the appropriate `__wasm_trampoline_N` function with:
-    /// `fn(func_idx, arg0, arg1, ...) -> result`
-    fn generate_host_trampoline(
-        &self,
-        func_idx: FuncIdx,
-        func_type: &FuncType,
-    ) -> Option<TrampolineCode> {
-        let num_params = func_type.params().len();
-
-        // Get the address of the appropriate trampoline helper
-        let trampoline_helper = get_trampoline_address(num_params)?;
-
-        // Create a compiler
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
-
-        // Calculate arg_types for the trampoline helper being called
-        // Return type is W (word), params are: func_idx, arg0, arg1, ...
-        let call_arg_types = {
-            let ret = SLJIT_ARG_TYPE_W;
-            let mut types = ret;
-            // func_idx (W)
-            types |= SLJIT_ARG_TYPE_W << 4;
-            // Additional wasm params
-            for i in 0..num_params.min(5) {
-                types |= SLJIT_ARG_TYPE_W << (4 * (i + 2));
-            }
-            types
-        };
-
-        // Calculate arg_types for our entry point
-        // Return type is W, params are: arg0, arg1, ... (NO store_ptr)
-        let entry_arg_types = {
-            let ret = SLJIT_ARG_TYPE_W;
-            let mut types = ret;
-            // wasm params only
-            for i in 0..num_params.min(6) {
-                types |= SLJIT_ARG_TYPE_W << (4 * (i + 1));
-            }
-            types
-        };
-
-        // Number of saved registers for incoming arguments (wasm params only, max 3)
-        let num_saved = num_params.min(3) as i32;
-
-        // Enter - sljit passes first 3 function arguments in saved registers S0, S1, S2
-        if emitter
-            .emit_enter(
-                0,
-                entry_arg_types,
-                regs! { gp: 6, float: 0 },
-                regs!(num_saved),
-                0,
-            )
-            .is_err()
-        {
-            return None;
-        }
-
-        // sljit calling convention: first 3 args go to S0, S1, S2 (saved registers)
-        // Input:  S0=arg0, S1=arg1, S2=arg2 (wasm args, NO store_ptr)
-        // We need to set up for icall: R0=func_idx, R1=arg0, R2=arg1, R3=arg2
-
-        match num_params {
-            0 => {
-                // Input: (none)
-                // Output: R0=func_idx
-                if emitter
-                    .mov(0, ScratchRegister::R0, func_idx.0 as i32)
-                    .is_err()
-                {
-                    return None;
-                }
-            }
-            1 => {
-                // Input: S0=arg0
-                // Output: R0=func_idx, R1=arg0
-                if emitter
-                    .mov(0, ScratchRegister::R0, func_idx.0 as i32)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R1, SavedRegister::S0)
-                    .is_err()
-                {
-                    return None;
-                }
-            }
-            2 => {
-                // Input: S0=arg0, S1=arg1
-                // Output: R0=func_idx, R1=arg0, R2=arg1
-                if emitter
-                    .mov(0, ScratchRegister::R0, func_idx.0 as i32)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R1, SavedRegister::S0)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R2, SavedRegister::S1)
-                    .is_err()
-                {
-                    return None;
-                }
-            }
-            3 => {
-                // Input: S0=arg0, S1=arg1, S2=arg2
-                // Output: R0=func_idx, R1=arg0, R2=arg1, R3=arg2
-                if emitter
-                    .mov(0, ScratchRegister::R0, func_idx.0 as i32)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R1, SavedRegister::S0)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R2, SavedRegister::S1)
-                    .is_err()
-                {
-                    return None;
-                }
-                if emitter
-                    .mov(0, ScratchRegister::R3, SavedRegister::S2)
-                    .is_err()
-                {
-                    return None;
-                }
-            }
-            _ => {
-                // For 4+ params, we'd need to handle stack args
-                return None;
-            }
-        }
-
-        // Call the trampoline helper
-        if emitter
-            .icall(JumpType::Call as i32, call_arg_types, trampoline_helper)
-            .is_err()
-        {
-            return None;
-        }
-
-        // Return (result is already in R0)
-        if emitter
-            .emit_return(sljit::ReturnOp::Mov, ScratchRegister::R0)
-            .is_err()
-        {
-            return None;
-        }
-
-        // Generate code
-        let code = compiler.generate_code();
-        let ptr = code.get() as usize;
-
-        Some(TrampolineCode { _code: code, ptr })
     }
 
     /// Get a function by index
@@ -1077,248 +896,8 @@ impl Store {
         }
     }
 
-    /// Get the funcs slice for trampoline access
-    pub(crate) fn funcs(&self) -> &[Func] {
-        &self.funcs
-    }
 }
 
-// ============================================================================
-// Trampoline Helper Functions
-// ============================================================================
-//
-// These functions are called from JIT code to invoke host functions.
-// They receive the store pointer as the first argument, followed by
-// the function index and the wasm arguments.
-//
-// The JIT compiler generates calls to these functions when it encounters
-// a call to an imported (host) function.
-
-/// Helper to convert word-sized (usize) arguments to Values based on function type
-fn word_args_to_values(args: &[usize], param_types: &[ValType]) -> Vec<Value> {
-    args.iter()
-        .zip(param_types)
-        .map(|(&arg, ty)| match ty {
-            ValType::I32 => Value::I32(arg as i32),
-            ValType::I64 => Value::I64(arg as i64), // Sign-extends on 32-bit
-            ValType::F32 => Value::F32(f32::from_bits(arg as u32)),
-            ValType::F64 => Value::F64(f64::from_bits(arg as u64)),
-            ValType::FuncRef => {
-                if arg == usize::MAX {
-                    Value::FuncRef(None)
-                } else {
-                    Value::FuncRef(Some(FuncIdx(arg as u32)))
-                }
-            }
-            ValType::ExternRef => {
-                if arg == usize::MAX {
-                    Value::ExternRef(None)
-                } else {
-                    Value::ExternRef(Some(arg as u32))
-                }
-            }
-        })
-        .collect()
-}
-
-/// Helper to convert result Value to word-sized (usize) for JIT code
-fn value_to_word(value: &Value) -> usize {
-    match value {
-        Value::I32(v) => *v as u32 as usize,
-        Value::I64(v) => *v as usize, // Truncates on 32-bit
-        Value::F32(v) => f32::to_bits(*v) as usize,
-        Value::F64(v) => f64::to_bits(*v) as usize, // Truncates on 32-bit
-        Value::FuncRef(Some(idx)) => idx.0 as usize,
-        Value::FuncRef(None) => usize::MAX,
-        Value::ExternRef(Some(idx)) => *idx as usize,
-        Value::ExternRef(None) => usize::MAX,
-    }
-}
-
-/// Call a host function with 0 arguments, returning usize (word-sized)
-///
-/// # Safety
-/// Must be called within `with_store_context()` so the store is available via TLS.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __wasm_trampoline_0(func_idx: usize) -> usize {
-    // Get store from TLS
-    let store_ptr = match get_current_store() {
-        Some(ptr) => ptr,
-        None => return 0, // Error: no store context
-    };
-    let store = unsafe { &mut *store_ptr };
-
-    let func = match store.funcs().get(func_idx) {
-        Some(f) => f.clone(),
-        None => return 0, // Error: function not found
-    };
-
-    if let Func::Host(hf) = func {
-        match (hf.callback)(store, &[]) {
-            Ok(results) => {
-                if results.is_empty() {
-                    0
-                } else {
-                    value_to_word(&results[0])
-                }
-            }
-            Err(_trap) => 0, // Error: trap occurred
-        }
-    } else {
-        0 // Error: not a host function
-    }
-}
-
-/// Call a host function with 1 argument, returning usize (word-sized)
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __wasm_trampoline_1(func_idx: usize, arg0: usize) -> usize {
-    // Get store from TLS
-    let store_ptr = match get_current_store() {
-        Some(ptr) => ptr,
-        None => return 0,
-    };
-    let store = unsafe { &mut *store_ptr };
-
-    let func = match store.funcs().get(func_idx) {
-        Some(f) => f.clone(),
-        None => return 0,
-    };
-
-    if let Func::Host(hf) = func {
-        let args = word_args_to_values(&[arg0], hf.func_type.params());
-        match (hf.callback)(store, &args) {
-            Ok(results) => {
-                if results.is_empty() {
-                    0
-                } else {
-                    value_to_word(&results[0])
-                }
-            }
-            Err(_trap) => 0,
-        }
-    } else {
-        0
-    }
-}
-
-/// Call a host function with 2 arguments, returning usize (word-sized)
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __wasm_trampoline_2(func_idx: usize, arg0: usize, arg1: usize) -> usize {
-    // Get store from TLS
-    let store_ptr = match get_current_store() {
-        Some(ptr) => ptr,
-        None => return 0,
-    };
-    let store = unsafe { &mut *store_ptr };
-
-    let func = match store.funcs().get(func_idx) {
-        Some(f) => f.clone(),
-        None => return 0,
-    };
-
-    if let Func::Host(hf) = func {
-        let args = word_args_to_values(&[arg0, arg1], hf.func_type.params());
-        match (hf.callback)(store, &args) {
-            Ok(results) => {
-                if results.is_empty() {
-                    0
-                } else {
-                    value_to_word(&results[0])
-                }
-            }
-            Err(_trap) => 0,
-        }
-    } else {
-        0
-    }
-}
-
-/// Call a host function with 3 arguments, returning usize (word-sized)
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __wasm_trampoline_3(
-    func_idx: usize,
-    arg0: usize,
-    arg1: usize,
-    arg2: usize,
-) -> usize {
-    // Get store from TLS
-    let store_ptr = match get_current_store() {
-        Some(ptr) => ptr,
-        None => return 0,
-    };
-    let store = unsafe { &mut *store_ptr };
-
-    let func = match store.funcs().get(func_idx) {
-        Some(f) => f.clone(),
-        None => return 0,
-    };
-
-    if let Func::Host(hf) = func {
-        let args = word_args_to_values(&[arg0, arg1, arg2], hf.func_type.params());
-        match (hf.callback)(store, &args) {
-            Ok(results) => {
-                if results.is_empty() {
-                    0
-                } else {
-                    value_to_word(&results[0])
-                }
-            }
-            Err(_trap) => 0,
-        }
-    } else {
-        0
-    }
-}
-
-/// Call a host function with 4 arguments, returning usize (word-sized)
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __wasm_trampoline_4(
-    func_idx: usize,
-    arg0: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-) -> usize {
-    // Get store from TLS
-    let store_ptr = match get_current_store() {
-        Some(ptr) => ptr,
-        None => return 0,
-    };
-    let store = unsafe { &mut *store_ptr };
-
-    let func = match store.funcs().get(func_idx) {
-        Some(f) => f.clone(),
-        None => return 0,
-    };
-
-    if let Func::Host(hf) = func {
-        let args = word_args_to_values(&[arg0, arg1, arg2, arg3], hf.func_type.params());
-        match (hf.callback)(store, &args) {
-            Ok(results) => {
-                if results.is_empty() {
-                    0
-                } else {
-                    value_to_word(&results[0])
-                }
-            }
-            Err(_trap) => 0,
-        }
-    } else {
-        0
-    }
-}
-
-/// Get the address of a trampoline function for a given number of arguments
-pub fn get_trampoline_address(num_args: usize) -> Option<usize> {
-    match num_args {
-        0 => Some(__wasm_trampoline_0 as *const () as usize),
-        1 => Some(__wasm_trampoline_1 as *const () as usize),
-        2 => Some(__wasm_trampoline_2 as *const () as usize),
-        3 => Some(__wasm_trampoline_3 as *const () as usize),
-        4 => Some(__wasm_trampoline_4 as *const () as usize),
-        _ => None,
-    }
-}
 
 #[cfg(test)]
 mod tests {
