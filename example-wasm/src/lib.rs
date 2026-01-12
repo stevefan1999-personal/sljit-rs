@@ -46,17 +46,16 @@ pub mod types;
 pub mod engine;
 
 // Re-export core types for public API
-pub use types::{
-    CompileError, FuncIdx, FuncType, FunctionEntry, GlobalIdx, GlobalInfo, InstantiationError,
-    MemoryIdx, MemoryInfo, RefType, TableEntry, TableIdx, Trap, TrapKind, ValType, Value,
-};
+pub use types::*;
 
 // Re-export engine types
 pub use engine::{Engine, EngineConfig, OptLevel, WasmFeatures};
 
 pub(crate) mod helpers;
 
+pub mod error;
 pub mod instance;
+pub mod linker;
 pub mod module;
 pub mod store;
 pub mod trampoline;
@@ -65,7 +64,8 @@ pub mod trampoline;
 pub use store::{Func, Global, HostFunc, Memory, PAGE_SIZE, Store, Table, WasmFunc};
 
 // Re-export instance types
-pub use instance::{Instance, Linker};
+pub use instance::Instance;
+pub use linker::Linker;
 
 // Re-export module types
 pub use module::Module;

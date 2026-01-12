@@ -9,7 +9,7 @@ use sljit::{
 };
 use wasmparser::{Operator, ValType};
 
-use crate::CompileError;
+use crate::error::CompileError;
 use crate::module::InternalFuncType;
 use crate::{FunctionEntry, GlobalInfo, MemoryInfo, TableEntry, helpers};
 
@@ -99,6 +99,7 @@ impl StackValue {
 /// WebAssembly function compiler
 ///
 /// Owns its own sljit Compiler context for code generation.
+#[derive(Debug)]
 pub struct Function {
     /// The sljit compiler instance (Option to allow temporary extraction during compilation)
     compiler: Option<Compiler>,
@@ -122,25 +123,6 @@ pub struct Function {
     tables: Vec<TableEntry>,
     /// Function types for call_indirect
     func_types: Vec<InternalFuncType>,
-}
-
-impl std::fmt::Debug for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Function")
-            .field("compiler", &self.compiler.as_ref().map(|_| "Compiler"))
-            .field("stack", &self.stack)
-            .field("blocks", &self.blocks)
-            .field("locals", &self.locals)
-            .field("param_count", &self.param_count)
-            .field("frame_offset", &self.frame_offset)
-            .field("local_size", &self.local_size)
-            .field("globals", &self.globals)
-            .field("memory", &self.memory)
-            .field("functions", &self.functions)
-            .field("tables", &self.tables)
-            .field("func_types", &self.func_types)
-            .finish()
-    }
 }
 
 // Helper macro for stack underflow error

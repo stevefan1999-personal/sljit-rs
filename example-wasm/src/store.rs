@@ -671,13 +671,12 @@ impl Store {
         let idx = FuncIdx(self.funcs.len() as u32);
 
         // For host functions, generate a libffi trampoline
-        if let Func::Host(ref mut hf) = func {
-            if let Some(trampoline) =
+        if let Func::Host(ref mut hf) = func
+            && let Some(trampoline) =
                 create_libffi_trampoline(idx, &hf.func_type, hf.callback.clone())
-            {
-                hf.trampoline_ptr = trampoline.fn_ptr;
-                self.trampolines.push(trampoline);
-            }
+        {
+            hf.trampoline_ptr = trampoline.fn_ptr;
+            self.trampolines.push(trampoline);
         }
 
         self.funcs.push(func);

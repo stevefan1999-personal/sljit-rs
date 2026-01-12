@@ -1,55 +1,90 @@
-use crunchy::unroll;
-use wasmparser::{Ieee32, Ieee64, Operator, Parser, Payload, ValType};
+use std::sync::Arc;
 
-use crate::CompileError;
-use crate::function::{CompiledFunction, Function, compile_simple};
+use crunchy::unroll;
+use wasmparser::{Ieee32, Ieee64, Operator, ValType};
+
+use crate::Engine;
+use crate::Linker;
+use crate::error::CompileError;
+use crate::function::compile_simple;
+use crate::instance::Instance;
+use crate::module::Module;
+use crate::store::{Func, Store};
+
+/// A compiled WebAssembly module with its runtime context
+/// This holds the Store and Instance needed to call functions
+struct CompiledModule {
+    store: Store,
+    #[allow(dead_code)]
+    instance: Instance,
+    func_code_ptr: usize,
+}
+
+impl CompiledModule {
+    /// Get the function as a callable function pointer
+    /// # Safety
+    /// The caller must ensure the function signature matches the actual compiled function
+    pub fn as_fn<F: Copy>(&self) -> F {
+        unsafe { std::mem::transmute_copy(&self.func_code_ptr) }
+    }
+}
 
 /// Helper function to compile from WAT (WebAssembly Text format)
-/// Returns the exported "test" function
+/// Uses the full Engine/Store/Module/Instance/Linker infrastructure
+/// Returns the exported "test" function ready to be called
 fn compile_from_wat_with_signature(
     wat: &str,
-    params: &[ValType],
-    results: &[ValType],
-) -> Result<CompiledFunction, CompileError> {
+    _params: &[ValType],
+    _results: &[ValType],
+) -> Result<CompiledModule, CompileError> {
     let wasm = wat::parse_str(wat).map_err(|e| CompileError::Parse(e.to_string()))?;
 
-    let mut wasm_compiler = Function::new();
+    // Create engine wrapped in Arc for shared ownership
+    let engine = Arc::new(Engine::default());
 
-    for payload in Parser::new(0).parse_all(&wasm) {
-        match payload.map_err(|e| CompileError::Parse(e.to_string()))? {
-            Payload::CodeSectionEntry(body) => {
-                let mut locals_reader = body
-                    .get_locals_reader()
-                    .map_err(|e| CompileError::Parse(e.to_string()))?;
+    // Parse the module
+    let module = Module::new(&engine, &wasm).map_err(|e| CompileError::Parse(e.to_string()))?;
 
-                let mut locals_vec = vec![];
-                for _ in 0..locals_reader.get_count() {
-                    let (count, val_type) = locals_reader
-                        .read()
-                        .map_err(|e| CompileError::Parse(e.to_string()))?;
-                    for _ in 0..count {
-                        locals_vec.push(val_type);
-                    }
-                }
+    // Create store with a clone of the engine Arc
+    let mut store = Store::new(engine.clone());
 
-                wasm_compiler.compile_function(
-                    params,
-                    results,
-                    &locals_vec,
-                    body.get_operators_reader()
-                        .map_err(|e| CompileError::Parse(e.to_string()))?
-                        .into_iter()
-                        .flatten(),
-                )?;
-            }
-            _ => {}
+    // Create an empty linker (no imports needed for these tests)
+    let linker = Linker::new();
+
+    // Instantiate the module - this compiles all functions
+    let instance = linker
+        .instantiate(&mut store, &module)
+        .map_err(|e| CompileError::Invalid(e.to_string()))?;
+
+    // Get the exported "test" function
+    let func_idx = instance
+        .get_func(&store, "test")
+        .ok_or_else(|| CompileError::Invalid("No 'test' function exported".into()))?;
+
+    // Get the function's code pointer
+    let func = store
+        .func(func_idx)
+        .ok_or_else(|| CompileError::Invalid("Function not found in store".into()))?;
+
+    let code_ptr = match func {
+        Func::Wasm(wf) => wf.code_ptr,
+        Func::Host(_) => {
+            return Err(CompileError::Invalid(
+                "Expected wasm function, got host function".into(),
+            ));
         }
+    };
+
+    if code_ptr == 0 {
+        return Err(CompileError::Invalid(
+            "Function has null code pointer".into(),
+        ));
     }
 
-    Ok(CompiledFunction {
-        code: wasm_compiler
-            .generate_code()
-            .ok_or_else(|| CompileError::Invalid("Failed to generate code".into()))?,
+    Ok(CompiledModule {
+        store,
+        instance,
+        func_code_ptr: code_ptr,
     })
 }
 

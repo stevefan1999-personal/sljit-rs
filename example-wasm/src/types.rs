@@ -6,6 +6,7 @@
 //! - `FuncType` - Function signatures
 //! - `Trap` - Runtime errors
 
+use itertools::Itertools;
 use std::fmt;
 use thiserror::Error;
 
@@ -100,24 +101,41 @@ impl From<wasmparser::ValType> for ValType {
     }
 }
 
+impl From<ValType> for wasmparser::ValType {
+    fn from(val: ValType) -> Self {
+        match val {
+            ValType::I32 => wasmparser::ValType::I32,
+            ValType::I64 => wasmparser::ValType::I64,
+            ValType::F32 => wasmparser::ValType::F32,
+            ValType::F64 => wasmparser::ValType::F64,
+            ValType::FuncRef => wasmparser::ValType::FUNCREF,
+            ValType::ExternRef => wasmparser::ValType::EXTERNREF,
+        }
+    }
+}
+
 // ============================================================================
 // Runtime Values
 // ============================================================================
 
 /// Index into the Store's function list
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct FuncIdx(pub u32);
 
 /// Index into the Store's memory list
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct MemoryIdx(pub u32);
 
 /// Index into the Store's table list
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct TableIdx(pub u32);
 
 /// Index into the Store's global list
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct GlobalIdx(pub u32);
 
 /// A runtime WebAssembly value
@@ -326,214 +344,17 @@ impl FuncType {
 
 impl fmt::Display for FuncType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(")?;
-        for (i, param) in self.params.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", param)?;
-        }
-        write!(f, ") -> (")?;
-        for (i, result) in self.results.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}", result)?;
-        }
-        write!(f, ")")
-    }
-}
-
-// ============================================================================
-// Error Types
-// ============================================================================
-
-/// Runtime trap - unrecoverable error during execution
-#[derive(Clone, Debug, Error)]
-#[error("trap: {message}")]
-pub struct Trap {
-    /// The kind of trap
-    pub kind: TrapKind,
-    /// Human-readable message
-    pub message: String,
-}
-
-impl Trap {
-    /// Create a new trap
-    #[inline]
-    pub fn new(kind: TrapKind, message: impl Into<String>) -> Self {
-        Self {
-            kind,
-            message: message.into(),
-        }
-    }
-
-    /// Create an unreachable trap
-    #[inline]
-    pub fn unreachable() -> Self {
-        Self::new(TrapKind::Unreachable, "unreachable executed")
-    }
-
-    /// Create a memory out of bounds trap
-    #[inline]
-    pub fn memory_out_of_bounds() -> Self {
-        Self::new(TrapKind::MemoryOutOfBounds, "out of bounds memory access")
-    }
-
-    /// Create a table out of bounds trap
-    #[inline]
-    pub fn table_out_of_bounds() -> Self {
-        Self::new(TrapKind::TableOutOfBounds, "out of bounds table access")
-    }
-
-    /// Create an indirect call type mismatch trap
-    #[inline]
-    pub fn indirect_call_type_mismatch() -> Self {
-        Self::new(
-            TrapKind::IndirectCallTypeMismatch,
-            "indirect call type mismatch",
+        write!(
+            f,
+            "({}) -> ({})",
+            self.params.iter().format(", "),
+            self.results.iter().format(", ")
         )
     }
-
-    /// Create a null function reference trap
-    #[inline]
-    pub fn null_func_ref() -> Self {
-        Self::new(TrapKind::NullFuncRef, "null function reference")
-    }
-
-    /// Create an integer overflow trap
-    #[inline]
-    pub fn integer_overflow() -> Self {
-        Self::new(TrapKind::IntegerOverflow, "integer overflow")
-    }
-
-    /// Create an integer division by zero trap
-    #[inline]
-    pub fn integer_divide_by_zero() -> Self {
-        Self::new(TrapKind::IntegerDivisionByZero, "integer division by zero")
-    }
-
-    /// Create an invalid conversion to integer trap
-    #[inline]
-    pub fn invalid_conversion_to_int() -> Self {
-        Self::new(
-            TrapKind::InvalidConversionToInteger,
-            "invalid conversion to integer",
-        )
-    }
-
-    /// Create a stack overflow trap
-    #[inline]
-    pub fn stack_overflow() -> Self {
-        Self::new(TrapKind::StackOverflow, "stack overflow")
-    }
-
-    /// Create an out of fuel trap
-    #[inline]
-    pub fn out_of_fuel() -> Self {
-        Self::new(TrapKind::OutOfFuel, "out of fuel")
-    }
 }
 
-/// The kind of runtime trap
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TrapKind {
-    /// Out of bounds memory access
-    MemoryOutOfBounds,
-    /// Out of bounds table access
-    TableOutOfBounds,
-    /// Indirect call type mismatch
-    IndirectCallTypeMismatch,
-    /// Null function reference
-    NullFuncRef,
-    /// Integer overflow
-    IntegerOverflow,
-    /// Integer division by zero
-    IntegerDivisionByZero,
-    /// Invalid conversion to integer
-    InvalidConversionToInteger,
-    /// Stack overflow
-    StackOverflow,
-    /// Unreachable code executed
-    Unreachable,
-    /// Out of fuel
-    OutOfFuel,
-    /// Custom trap from host function
-    Host,
-}
-
-impl fmt::Display for TrapKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MemoryOutOfBounds => write!(f, "memory out of bounds"),
-            Self::TableOutOfBounds => write!(f, "table out of bounds"),
-            Self::IndirectCallTypeMismatch => write!(f, "indirect call type mismatch"),
-            Self::NullFuncRef => write!(f, "null function reference"),
-            Self::IntegerOverflow => write!(f, "integer overflow"),
-            Self::IntegerDivisionByZero => write!(f, "integer division by zero"),
-            Self::InvalidConversionToInteger => write!(f, "invalid conversion to integer"),
-            Self::StackOverflow => write!(f, "stack overflow"),
-            Self::Unreachable => write!(f, "unreachable"),
-            Self::OutOfFuel => write!(f, "out of fuel"),
-            Self::Host => write!(f, "host error"),
-        }
-    }
-}
-
-/// Errors during module instantiation
-#[derive(Clone, Debug, Error)]
-pub enum InstantiationError {
-    /// Import not found
-    #[error("import not found: {module}.{name}")]
-    ImportNotFound { module: String, name: String },
-    /// Import type mismatch
-    #[error("import type mismatch: expected {expected}, got {got}")]
-    ImportTypeMismatch { expected: String, got: String },
-    /// Memory initialization failed
-    #[error("memory initialization failed: {0}")]
-    MemoryInitFailed(String),
-    /// Table initialization failed
-    #[error("table initialization failed: {0}")]
-    TableInitFailed(String),
-    /// Start function trapped
-    #[error("start function trapped: {0}")]
-    StartTrapped(#[from] Trap),
-    /// Module validation failed
-    #[error("validation failed: {0}")]
-    ValidationFailed(String),
-}
-
-/// Errors during compilation
-#[derive(Clone, Debug, Error)]
-pub enum CompileError {
-    /// Parsing error
-    #[error("parse error: {0}")]
-    Parse(String),
-    /// SLJIT error
-    #[error("sljit error: {0}")]
-    Sljit(String),
-    /// Unsupported feature
-    #[error("unsupported: {0}")]
-    Unsupported(String),
-    /// Invalid WebAssembly
-    #[error("invalid: {0}")]
-    Invalid(String),
-    /// Register allocation failed
-    #[error("register allocation failed")]
-    RegisterAllocationFailed,
-}
-
-impl From<sljit::sys::ErrorCode> for CompileError {
-    fn from(e: sljit::sys::ErrorCode) -> Self {
-        Self::Sljit(format!("{:?}", e))
-    }
-}
-
-impl From<wasmparser::BinaryReaderError> for CompileError {
-    fn from(e: wasmparser::BinaryReaderError) -> Self {
-        Self::Parse(e.to_string())
-    }
-}
+pub mod trap;
+pub use trap::{Trap, TrapKind};
 
 // ============================================================================
 // Reference Types (for Table)
