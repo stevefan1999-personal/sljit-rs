@@ -7,16 +7,14 @@ use crate::Engine;
 use crate::Linker;
 use crate::error::CompileError;
 use crate::function::compile_simple;
-use crate::instance::Instance;
 use crate::module::Module;
 use crate::store::{Func, Store};
 
 /// A compiled WebAssembly module with its runtime context
 /// This holds the Store and Instance needed to call functions
 struct CompiledModule {
-    store: Store,
     #[allow(dead_code)]
-    instance: Instance,
+    store: Store,
     func_code_ptr: usize,
 }
 
@@ -32,11 +30,7 @@ impl CompiledModule {
 /// Helper function to compile from WAT (WebAssembly Text format)
 /// Uses the full Engine/Store/Module/Instance/Linker infrastructure
 /// Returns the exported "test" function ready to be called
-fn compile_from_wat_with_signature(
-    wat: &str,
-    _params: &[ValType],
-    _results: &[ValType],
-) -> Result<CompiledModule, CompileError> {
+fn compile_from_wat_with_signature(wat: &str) -> Result<CompiledModule, CompileError> {
     let wasm = wat::parse_str(wat).map_err(|e| CompileError::Parse(e.to_string()))?;
 
     // Create engine wrapped in Arc for shared ownership
@@ -83,7 +77,6 @@ fn compile_from_wat_with_signature(
 
     Ok(CompiledModule {
         store,
-        instance,
         func_code_ptr: code_ptr,
     })
 }
@@ -3742,8 +3735,7 @@ fn test_br_table_simple() {
         )
     "#;
 
-    let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
-        .expect("Compilation failed");
+    let func = compile_from_wat_with_signature(wat).expect("Compilation failed");
     let f = func.as_fn::<fn(i32) -> i32>();
 
     assert_eq!(f(0), 10); // case 0
@@ -3801,8 +3793,7 @@ fn test_br_table_with_computation() {
         )
     "#;
 
-    let func = compile_from_wat_with_signature(wat, &[ValType::I32, ValType::I32], &[ValType::I32])
-        .expect("Compilation failed");
+    let func = compile_from_wat_with_signature(wat).expect("Compilation failed");
     let f = func.as_fn::<fn(i32, i32) -> i32>();
 
     // Test case 0: add 10
@@ -3846,8 +3837,7 @@ fn test_br_table_fallthrough() {
         )
     "#;
 
-    let func = compile_from_wat_with_signature(wat, &[ValType::I32], &[ValType::I32])
-        .expect("Compilation failed");
+    let func = compile_from_wat_with_signature(wat).expect("Compilation failed");
     let f = func.as_fn::<fn(i32) -> i32>();
 
     // All cases should return 42

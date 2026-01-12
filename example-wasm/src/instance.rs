@@ -590,6 +590,18 @@ fn compile_module_functions(
     // Build func types for call_indirect
     let func_types: Vec<InternalFuncType> = module.func_types().to_vec();
 
+    // Create compiler
+    let mut wasm_compiler = Function::new();
+
+    // Set up compiler context
+    wasm_compiler.set_globals(global_infos.clone());
+    if let Some(ref mem_info) = memory_info {
+        wasm_compiler.set_memory(mem_info.clone());
+    }
+    wasm_compiler.set_functions(function_entries.clone());
+    wasm_compiler.set_tables(table_entries.clone());
+    wasm_compiler.set_func_types(func_types.clone());
+
     // Compile each function body
     for (i, body) in func_bodies.iter().enumerate() {
         let func_idx = funcs.get(num_imported_funcs + i).ok_or_else(|| {
@@ -607,20 +619,10 @@ fn compile_module_functions(
             ))
         })?;
 
-        // Create compiler
-        let mut wasm_compiler = Function::new();
-
-        // Set up compiler context
-        wasm_compiler.set_globals(global_infos.clone());
-        if let Some(ref mem_info) = memory_info {
-            wasm_compiler.set_memory(mem_info.clone());
-        }
-        wasm_compiler.set_functions(function_entries.clone());
-        wasm_compiler.set_tables(table_entries.clone());
-        wasm_compiler.set_func_types(func_types.clone());
+        let wasm_compiler = wasm_compiler.clone();
 
         // Compile the function
-        wasm_compiler
+        let code = wasm_compiler
             .compile_function(
                 &func_type.params,
                 &func_type.results,
@@ -634,13 +636,6 @@ fn compile_module_functions(
                 ))
             })?;
 
-        // Generate code
-        let code = wasm_compiler.generate_code().ok_or_else(|| {
-            InstantiationError::ValidationFailed(format!(
-                "compiler already consumed for function {}",
-                i
-            ))
-        })?;
         let code_ptr = code.get() as usize;
 
         // Update the function's code pointer
@@ -649,9 +644,8 @@ fn compile_module_functions(
             wf.code_ptr = code_ptr;
         }
 
-        // Keep the generated code alive by leaking it
-        // In a real implementation, we'd store this in the Instance
-        std::mem::forget(code);
+        // Store the generated code in the Store to keep it alive
+        store.store_compiled_code(code);
     }
 
     // Update function entries with correct code pointers for call instructions

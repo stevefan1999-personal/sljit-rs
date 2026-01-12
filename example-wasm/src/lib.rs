@@ -49,7 +49,7 @@ pub mod engine;
 pub use types::*;
 
 // Re-export engine types
-pub use engine::{Engine, EngineConfig, OptLevel, WasmFeatures};
+pub use engine::{Engine, EngineConfig, WasmFeatures};
 
 pub(crate) mod helpers;
 

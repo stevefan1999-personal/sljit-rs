@@ -462,7 +462,7 @@ impl Drop for GeneratedCode {
 }
 
 #[repr(transparent)]
-#[derive(From)]
+#[derive(From, Debug)]
 pub struct Compiler(*mut sljit_compiler);
 
 impl Default for Compiler {
@@ -475,12 +475,35 @@ impl Default for Compiler {
 impl Compiler {
     #[inline(always)]
     pub fn new() -> Self {
-        Self(unsafe { sljit_create_compiler(null_mut()) })
+        #[cfg(feature = "force-verbose")]
+        {
+            let mut this = Self(unsafe { sljit_create_compiler(null_mut()) });
+            this.verbose();
+            this
+        }
+        #[cfg(not(feature = "force-verbose"))]
+        {
+            Self(unsafe { sljit_create_compiler(null_mut()) })
+        }
     }
 
     #[inline(always)]
     pub fn is_null(&self) -> bool {
         self.0.is_null()
+    }
+}
+
+#[cfg(feature = "force-verbose")]
+impl Compiler {
+    #[inline(always)]
+    pub fn verbose(&mut self) -> &mut Self {
+        unsafe {
+            unsafe extern "C" {
+                pub fn sljit_compiler_verbose_helper(compiler: *mut sljit_compiler);
+            }
+            sljit_compiler_verbose_helper(self.0);
+        }
+        self
     }
 }
 

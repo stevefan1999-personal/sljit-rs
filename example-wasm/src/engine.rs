@@ -12,18 +12,6 @@ use std::sync::Arc;
 // Engine Configuration
 // ============================================================================
 
-/// Optimization level for JIT compilation
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OptLevel {
-    /// No optimizations, fastest compile time
-    None,
-    /// Basic optimizations, balanced (default)
-    #[default]
-    Speed,
-    /// Aggressive optimizations, slower compile
-    SpeedAndSize,
-}
-
 /// WebAssembly feature flags
 #[derive(Clone, Debug)]
 pub struct WasmFeatures {
@@ -48,7 +36,7 @@ impl Default for WasmFeatures {
         Self {
             multi_value: true,
             bulk_memory: true,
-            reference_types: true,
+            reference_types: false,
             simd: false, // Not supported
             mutable_global: true,
             sign_extension: true,
@@ -60,8 +48,6 @@ impl Default for WasmFeatures {
 /// Engine configuration for compilation and runtime
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
-    /// Optimization level
-    pub opt_level: OptLevel,
     /// WebAssembly features
     pub features: WasmFeatures,
     /// Maximum stack depth (in frames)
@@ -73,7 +59,6 @@ pub struct EngineConfig {
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
-            opt_level: OptLevel::Speed,
             features: WasmFeatures::default(),
             max_stack_depth: 1024,
             fuel_metering: false,
@@ -109,12 +94,6 @@ impl Engine {
         &self.config
     }
 
-    /// Get the optimization level
-    #[inline]
-    pub fn opt_level(&self) -> OptLevel {
-        self.config.opt_level
-    }
-
     /// Get the WebAssembly features
     #[inline]
     pub fn features(&self) -> &WasmFeatures {
@@ -129,14 +108,4 @@ impl Engine {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_engine_default() {
-        let engine = Engine::default();
-        assert_eq!(engine.opt_level(), OptLevel::Speed);
-        assert!(engine.features().multi_value);
-        assert!(!engine.features().simd);
-    }
-}
+mod tests;

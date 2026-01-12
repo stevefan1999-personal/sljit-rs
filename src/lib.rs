@@ -5,9 +5,9 @@ extern crate alloc;
 use alloc::vec::Vec;
 pub use sljit_sys as sys;
 
-use sljit_sys::{
-    Compiler, ErrorCode, Fop1, Fop2, Fop2r, Jump, Label, Op0, Op1, Op2, Op2r, sljit_sw,
-};
+pub use sljit_sys::Compiler;
+pub use sljit_sys::arg_types;
+use sljit_sys::{ErrorCode, Fop1, Fop2, Fop2r, Jump, Label, Op0, Op1, Op2, Op2r, sljit_sw};
 
 use crate::sys::SLJIT_MEM;
 
@@ -1022,7 +1022,7 @@ impl<'a> Emitter<'a> {
     ///
     /// ```
     /// # use sljit::{Compiler, Emitter, args, regs};
-    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut compiler = Compiler::new();
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// // Function with 3 arguments of type sljit_sw and 1 return value of type sljit_sw.
     /// // The function uses 1 scratch register and 3 saved registers.
@@ -1055,7 +1055,7 @@ impl<'a> Emitter<'a> {
     ///
     /// ```
     /// # use sljit::{Compiler, Emitter, JumpType};
-    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut compiler = Compiler::new();
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut jump = emitter.jump(JumpType::Jump).unwrap();
     /// let mut label = emitter.put_label().unwrap();
@@ -1076,10 +1076,10 @@ impl<'a> Emitter<'a> {
     /// # Examples
     ///
     /// ```
-    /// # use sljit::{Compiler, Emitter, JumpType, args};
-    /// # let mut compiler = Compiler::new().unwrap();
+    /// # use sljit::{Compiler, Emitter, JumpType, args, arg_types};
+    /// # let mut compiler = Compiler::new();
     /// # let mut emitter = Emitter::new(&mut compiler);
-    /// let mut call = emitter.call(JumpType::Call, arg_types!(W, W)).unwrap();
+    /// let mut call = emitter.call(JumpType::Call, arg_types!([W, W])).unwrap();
     /// ```
     #[inline(always)]
     pub fn call(&mut self, type_: JumpType, arg_types: i32) -> Result<sys::Jump, ErrorCode> {
@@ -1100,7 +1100,7 @@ impl<'a> Emitter<'a> {
     ///
     /// ```
     /// # use sljit::{Compiler, Emitter, Condition, ScratchRegister::R0};
-    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut compiler = Compiler::new();
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut jump = emitter.cmp(Condition::Equal, R0, 5).unwrap();
     /// ```
@@ -1132,7 +1132,7 @@ impl<'a> Emitter<'a> {
     ///
     /// ```
     /// # use sljit::{Compiler, Emitter, Condition, FloatRegister::FR0};
-    /// # let mut compiler = Compiler::new().unwrap();
+    /// # let mut compiler = Compiler::new();
     /// # let mut emitter = Emitter::new(&mut compiler);
     /// let mut jump = emitter.fcmp(Condition::FEqual, FR0, 5.0f64).unwrap();
     /// ```

@@ -8,26 +8,31 @@
 
 use itertools::Itertools;
 use std::fmt;
-use thiserror::Error;
 
 // ============================================================================
 // Value Types
 // ============================================================================
 
 /// WebAssembly value types
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, derive_more::Display)]
 pub enum ValType {
     /// 32-bit integer
+    #[display("i32")]
     I32,
     /// 64-bit integer
+    #[display("i64")]
     I64,
     /// 32-bit float
+    #[display("f32")]
     F32,
     /// 64-bit float
+    #[display("f64")]
     F64,
     /// Function reference
+    #[display("funcref")]
     FuncRef,
     /// External reference
+    #[display("externref")]
     ExternRef,
 }
 
@@ -63,19 +68,6 @@ impl ValType {
             Self::I32 | Self::F32 => 4,
             Self::I64 | Self::F64 => 8,
             Self::FuncRef | Self::ExternRef => core::mem::size_of::<usize>(),
-        }
-    }
-}
-
-impl fmt::Display for ValType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::I32 => write!(f, "i32"),
-            Self::I64 => write!(f, "i64"),
-            Self::F32 => write!(f, "f32"),
-            Self::F64 => write!(f, "f64"),
-            Self::FuncRef => write!(f, "funcref"),
-            Self::ExternRef => write!(f, "externref"),
         }
     }
 }
@@ -139,19 +131,25 @@ pub struct TableIdx(pub u32);
 pub struct GlobalIdx(pub u32);
 
 /// A runtime WebAssembly value
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, derive_more::Display)]
 pub enum Value {
     /// 32-bit integer
+    #[display("i32:{_0}")]
     I32(i32),
     /// 64-bit integer
+    #[display("i64:{_0}")]
     I64(i64),
     /// 32-bit float
+    #[display("f32:{_0}")]
     F32(f32),
     /// 64-bit float
+    #[display("f64:{_0}")]
     F64(f64),
     /// Function reference (None = null)
+    #[display("funcref:{}", _0.map(|idx| idx.0 as i64).unwrap_or(-1))]
     FuncRef(Option<FuncIdx>),
     /// External reference (None = null, Some = opaque handle)
+    #[display("externref:{}", _0.map(|idx| idx as i64).unwrap_or(-1))]
     ExternRef(Option<u32>),
 }
 
@@ -240,21 +238,6 @@ impl Value {
     #[inline]
     pub fn unwrap_f64(&self) -> f64 {
         self.as_f64().expect("expected f64 value")
-    }
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::I32(v) => write!(f, "i32:{}", v),
-            Self::I64(v) => write!(f, "i64:{}", v),
-            Self::F32(v) => write!(f, "f32:{}", v),
-            Self::F64(v) => write!(f, "f64:{}", v),
-            Self::FuncRef(None) => write!(f, "funcref:null"),
-            Self::FuncRef(Some(idx)) => write!(f, "funcref:{}", idx.0),
-            Self::ExternRef(None) => write!(f, "externref:null"),
-            Self::ExternRef(Some(idx)) => write!(f, "externref:{}", idx),
-        }
     }
 }
 

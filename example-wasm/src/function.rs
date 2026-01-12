@@ -1,4 +1,5 @@
 use bitvec::prelude::*;
+use derive_more::Deref;
 use sljit::sys::{
     self, Compiler, Fop1, Fop2, GeneratedCode, Op1, Op2, SLJIT_32, SLJIT_ARG_TYPE_F32,
     SLJIT_ARG_TYPE_F64, SLJIT_ARG_TYPE_W, arg_types, set,
@@ -99,10 +100,8 @@ impl StackValue {
 /// WebAssembly function compiler
 ///
 /// Owns its own sljit Compiler context for code generation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
-    /// The sljit compiler instance (Option to allow temporary extraction during compilation)
-    compiler: Option<Compiler>,
     stack: Vec<StackValue>,
     blocks: Vec<Block>,
     locals: Vec<LocalVar>,
@@ -110,9 +109,9 @@ pub struct Function {
     frame_offset: i32,
     local_size: i32,
     /// Bitmap tracking occupied scratch registers (bit i = 1 means register i is occupied)
-    occupied_registers: BitArr!(for 6, in u8, Lsb0),
+    occupied_registers: BitArr!(for 3, in u8, Lsb0),
     /// Bitmap tracking occupied float registers (bit i = 1 means register i is occupied)
-    occupied_float_registers: BitArr!(for 6, in u8, Lsb0),
+    occupied_float_registers: BitArr!(for 2, in u8, Lsb0),
     /// Global variables
     globals: Vec<GlobalInfo>,
     /// Memory instance
@@ -136,7 +135,6 @@ impl Function {
     /// Create a new Function with its own compiler context
     pub fn new() -> Self {
         Self {
-            compiler: Some(Compiler::new()),
             stack: vec![],
             blocks: vec![],
             locals: vec![],
@@ -151,27 +149,6 @@ impl Function {
             tables: vec![],
             func_types: vec![],
         }
-    }
-
-    /// Get a reference to the internal compiler
-    #[inline]
-    pub fn compiler(&self) -> Option<&Compiler> {
-        self.compiler.as_ref()
-    }
-
-    /// Get a mutable reference to the internal compiler
-    #[inline]
-    pub fn compiler_mut(&mut self) -> Option<&mut Compiler> {
-        self.compiler.as_mut()
-    }
-
-    /// Generate code and return the GeneratedCode
-    ///
-    /// This consumes the Function and returns the generated machine code.
-    /// Returns None if the compiler has already been consumed.
-    #[inline]
-    pub fn generate_code(mut self) -> Option<GeneratedCode> {
-        self.compiler.take().map(|c| c.generate_code())
     }
 
     /// Set globals for the compiler
@@ -219,7 +196,7 @@ impl Function {
     /// Allocate a scratch register, spilling if necessary
     fn alloc_register(&mut self, emitter: &mut Emitter) -> Result<ScratchRegister, CompileError> {
         // Find first non-occupied register (only check first 6 bits for valid registers R0-R5)
-        if let Some(idx) = self.occupied_registers[..6].iter_zeros().next() {
+        if let Some(idx) = self.occupied_registers[..3].iter_zeros().next() {
             self.occupied_registers.set(idx, true);
             // Convert index to ScratchRegister
             Ok(unsafe { core::mem::transmute(ScratchRegister::R0 as i32 + idx as i32) })
@@ -244,7 +221,7 @@ impl Function {
         emitter: &mut Emitter,
     ) -> Result<FloatRegister, CompileError> {
         // Find first non-occupied float register
-        if let Some(idx) = self.occupied_float_registers[..6].iter_zeros().next() {
+        if let Some(idx) = self.occupied_float_registers[..2].iter_zeros().next() {
             self.occupied_float_registers.set(idx, true);
             // Convert index to FloatRegister
             Ok(unsafe { core::mem::transmute(FloatRegister::FR0 as i32 + idx as i32) })
@@ -544,45 +521,18 @@ impl Function {
     }
 
     /// Compile a WebAssembly function
-    ///
-    /// This uses the internal Compiler instance owned by this Function.
     pub fn compile_function<'a, B>(
-        &mut self,
+        mut self,
         params: &[ValType],
         results: &[ValType],
         locals: &[ValType],
         body: B,
-    ) -> Result<(), CompileError>
+    ) -> Result<CompiledFunction, CompileError>
     where
         B: Iterator<Item = Operator<'a>>,
     {
-        // Extract compiler temporarily to work around borrow checker
-        let mut compiler = self
-            .compiler
-            .take()
-            .ok_or_else(|| CompileError::Invalid("Compiler already consumed".into()))?;
-
-        let result = self.compile_function_impl(&mut compiler, params, results, locals, body);
-
-        // Put the compiler back
-        self.compiler = Some(compiler);
-
-        result
-    }
-
-    /// Internal implementation of compile_function
-    fn compile_function_impl<'a, B>(
-        &mut self,
-        compiler: &mut Compiler,
-        params: &[ValType],
-        results: &[ValType],
-        locals: &[ValType],
-        body: B,
-    ) -> Result<(), CompileError>
-    where
-        B: Iterator<Item = Operator<'a>>,
-    {
-        let mut emitter = Emitter::new(compiler);
+        let mut compiler = Compiler::new();
+        let mut emitter = Emitter::new(&mut compiler);
         let total_locals: usize = params.len() + locals.len();
 
         self.param_count = total_locals;
@@ -618,7 +568,7 @@ impl Function {
         emitter.emit_enter(
             0,
             Self::make_arg_types(params, results),
-            regs! { gp: 6, float: 6 },
+            regs! { gp: 3, float: 2 },
             regs!(saved_count as i32),
             self.local_size,
         )?;
@@ -641,7 +591,9 @@ impl Function {
         for op in body {
             self.compile_operator(&mut emitter, &op)?;
         }
-        Ok(())
+        Ok(CompiledFunction {
+            code: compiler.generate_code(),
+        })
     }
 
     /// Compile a single WebAssembly operator
@@ -2896,6 +2848,8 @@ impl Default for Function {
 }
 
 /// Compiled WebAssembly function
+#[repr(transparent)]
+#[derive(Deref)]
 pub struct CompiledFunction {
     pub(crate) code: GeneratedCode,
 }
@@ -2934,11 +2888,5 @@ pub fn compile_simple(
     locals: &[ValType],
     body: &[Operator],
 ) -> Result<CompiledFunction, CompileError> {
-    let mut wasm_compiler = Function::new();
-    wasm_compiler.compile_function(params, results, locals, body.iter().cloned())?;
-    Ok(CompiledFunction {
-        code: wasm_compiler
-            .generate_code()
-            .ok_or_else(|| CompileError::Invalid("Compiler already consumed".into()))?,
-    })
+    Function::new().compile_function(params, results, locals, body.iter().cloned())
 }

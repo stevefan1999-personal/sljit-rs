@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::Engine;
+use crate::function::CompiledFunction;
 use crate::trampoline::{LibffiTrampoline, create_libffi_trampoline};
 use crate::types::{
     FuncIdx, FuncType, GlobalIdx, MemoryIdx, RefType, TableIdx, Trap, TrapKind, ValType, Value,
@@ -395,26 +396,14 @@ impl Global {
 // ============================================================================
 
 /// A callable function - either host or wasm
-#[derive(Clone)]
+#[derive(Clone, derive_more::Debug)]
 pub enum Func {
     /// A WebAssembly function
+    #[debug("Func::Wasm {{ instance_idx: {}, func_idx: {}, code_ptr: {} }}", _0.instance_idx, _0.func_idx, _0.code_ptr)]
     Wasm(WasmFunc),
     /// A host-provided function
+    #[debug("Func::Host {{ .. }}")]
     Host(HostFunc),
-}
-
-impl std::fmt::Debug for Func {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Func::Wasm(wf) => f
-                .debug_struct("Func::Wasm")
-                .field("instance_idx", &wf.instance_idx)
-                .field("func_idx", &wf.func_idx)
-                .field("code_ptr", &wf.code_ptr)
-                .finish(),
-            Func::Host(_) => f.debug_struct("Func::Host").finish_non_exhaustive(),
-        }
-    }
 }
 
 /// A WebAssembly function
@@ -510,35 +499,30 @@ impl Func {
 // ============================================================================
 
 /// Runtime state container - owns all runtime instances
+#[derive(derive_more::Debug)]
 pub struct Store {
     /// Reference to the engine for compilation settings
     engine: Arc<Engine>,
     /// All memory instances in this store
+    #[debug("{}", self.memories.len())]
     memories: Vec<Memory>,
     /// All table instances in this store
+    #[debug("{}", self.tables.len())]
     tables: Vec<Table>,
     /// All global instances in this store
+    #[debug("{}", self.globals.len())]
     globals: Vec<Global>,
     /// All function instances in this store
+    #[debug("{}", self.funcs.len())]
     funcs: Vec<Func>,
     /// Fuel for execution limits - optional
     fuel: Option<u64>,
     /// Generated libffi trampolines for host functions (kept alive here)
+    #[debug("{}", self.trampolines.len())]
     trampolines: Vec<LibffiTrampoline>,
-}
-
-impl std::fmt::Debug for Store {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Store")
-            .field("engine", &self.engine)
-            .field("memories", &self.memories.len())
-            .field("tables", &self.tables.len())
-            .field("globals", &self.globals.len())
-            .field("funcs", &self.funcs.len())
-            .field("fuel", &self.fuel)
-            .field("trampolines", &self.trampolines.len())
-            .finish()
-    }
+    /// Compiled WebAssembly function code (kept alive here to avoid leaking)
+    #[debug("{}", self.compiled_code.len())]
+    compiled_code: Vec<CompiledFunction>,
 }
 
 impl Store {
@@ -552,6 +536,7 @@ impl Store {
             funcs: Vec::new(),
             fuel: None,
             trampolines: Vec::new(),
+            compiled_code: Vec::new(),
         }
     }
 
@@ -697,6 +682,16 @@ impl Store {
     #[inline]
     pub fn num_funcs(&self) -> usize {
         self.funcs.len()
+    }
+
+    // ========== Compiled code operations ==========
+
+    /// Store a compiled WebAssembly function to keep its code alive
+    /// Returns the index of the stored code
+    pub fn store_compiled_code(&mut self, code: CompiledFunction) -> usize {
+        let idx = self.compiled_code.len();
+        self.compiled_code.push(code);
+        idx
     }
 
     /// Call a function by index

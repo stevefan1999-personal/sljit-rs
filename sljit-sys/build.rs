@@ -164,6 +164,11 @@ fn build_static_library() -> miette::Result<()> {
         .file(out_path.join("out.c"))
         .include(".");
 
+    #[cfg(feature = "force-verbose")]
+    {
+        cc.file(out_path.join("verbose.c"));
+    }
+
     if ARCH.len() == 1 {
         cc.define(ARCH.first().unwrap().into(), "1");
     }

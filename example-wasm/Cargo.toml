@@ -8,6 +8,7 @@ version.workspace = true
 
 [dependencies]
 bitvec = { version = "1.0", default-features = false }
+crabtime = "1.1.4"
 derivative = "2.2.0"
 derive_more = { version = "2.1.1", features = ["full"] }
 itertools = "0.14.0"
@@ -15,6 +16,10 @@ libffi = "5.1.0"
 sljit = { path = ".." }
 thiserror = "2.0"
 wasmparser = { version = "0.244.0", default-features = false }
+wat = { version = "1.242.0", default-features = false }
+
+[build-dependencies]
+itertools = "0.14.0"
 wat = { version = "1.242.0", default-features = false }
 
 [dev-dependencies]

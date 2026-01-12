@@ -14,42 +14,30 @@ use crate::types::{FuncIdx, FuncType, ValType, Value};
 /// libffi closures must be kept alive as long as the function pointer is used.
 /// This enum holds closures with different arities.
 #[allow(clippy::type_complexity)]
+#[derive(derive_more::Debug)]
 pub enum LibffiClosure {
     /// Closure with 0 arguments
+    #[debug("LibffiClosure::Arity0")]
     Arity0(Closure0<'static, usize>),
     /// Closure with 1 argument
+    #[debug("LibffiClosure::Arity1")]
     Arity1(Closure1<'static, usize, usize>),
     /// Closure with 2 arguments
+    #[debug("LibffiClosure::Arity2")]
     Arity2(Closure2<'static, usize, usize, usize>),
     /// Closure with 3 arguments
+    #[debug("LibffiClosure::Arity3")]
     Arity3(Closure3<'static, usize, usize, usize, usize>),
 }
 
-impl std::fmt::Debug for LibffiClosure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LibffiClosure::Arity0(_) => write!(f, "LibffiClosure::Arity0"),
-            LibffiClosure::Arity1(_) => write!(f, "LibffiClosure::Arity1"),
-            LibffiClosure::Arity2(_) => write!(f, "LibffiClosure::Arity2"),
-            LibffiClosure::Arity3(_) => write!(f, "LibffiClosure::Arity3"),
-        }
-    }
-}
-
 /// Result of creating a libffi trampoline
+#[derive(derive_more::Debug)]
 pub struct LibffiTrampoline {
     /// The closure storage (must be kept alive)
+    #[debug(skip)]
     pub closure: LibffiClosure,
     /// The function pointer that can be called
     pub fn_ptr: usize,
-}
-
-impl std::fmt::Debug for LibffiTrampoline {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LibffiTrampoline")
-            .field("fn_ptr", &self.fn_ptr)
-            .finish()
-    }
 }
 
 /// Helper to convert word-sized (usize) arguments to Values based on function type
