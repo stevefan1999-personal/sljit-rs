@@ -1,10 +1,9 @@
 use crunchy::unroll;
 use sljit::sys::Compiler;
-use wasmparser::{Ieee32, Ieee64, Parser, Payload};
+use wasmparser::{Ieee32, Ieee64, Operator, Parser, Payload, ValType};
 
+use crate::CompileError;
 use crate::function::{CompiledFunction, Function, compile_simple};
-
-use super::*;
 
 /// Helper function to compile from WAT (WebAssembly Text format)
 /// Returns the exported "test" function
@@ -3823,4 +3822,871 @@ fn test_br_table_fallthrough() {
     assert_eq!(f(2), 42);
     assert_eq!(f(3), 42);
     assert_eq!(f(100), 42);
+}
+
+// ============================================================================
+// Additional I64 Operation Tests
+// ============================================================================
+
+#[test]
+fn test_i64_mul() {
+    // Test I64Mul: multiply two i64 values
+    let body = [
+        Operator::I64Const { value: 1000000 },
+        Operator::I64Const { value: 1000000 },
+        Operator::I64Mul,
+        Operator::I32WrapI64, // Lower 32 bits
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 1000000 * 1000000 = 1000000000000, lower 32 bits = 0xE8D4A51000 & 0xFFFFFFFF = 0xD4A51000
+    assert_eq!(f() as u32, 0xD4A51000);
+}
+
+#[test]
+fn test_i64_div_s() {
+    // Test I64DivS: signed division of i64 values
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 3 },
+        Operator::I64DivS,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 33); // 100 / 3 = 33
+}
+
+#[test]
+fn test_i64_div_s_negative() {
+    // Test I64DivS with negative values
+    let body = [
+        Operator::I64Const { value: -100 },
+        Operator::I64Const { value: 3 },
+        Operator::I64DivS,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), -33); // -100 / 3 = -33
+}
+
+#[test]
+fn test_i64_div_u() {
+    // Test I64DivU: unsigned division of i64 values
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 3 },
+        Operator::I64DivU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 33); // 100 / 3 = 33
+}
+
+#[test]
+fn test_i64_rem_s() {
+    // Test I64RemS: signed remainder of i64 values
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 3 },
+        Operator::I64RemS,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 100 % 3 = 1
+}
+
+#[test]
+fn test_i64_rem_s_negative() {
+    // Test I64RemS with negative dividend
+    let body = [
+        Operator::I64Const { value: -100 },
+        Operator::I64Const { value: 3 },
+        Operator::I64RemS,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), -1); // -100 % 3 = -1
+}
+
+#[test]
+fn test_i64_rem_u() {
+    // Test I64RemU: unsigned remainder of i64 values
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 7 },
+        Operator::I64RemU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 2); // 100 % 7 = 2
+}
+
+#[test]
+fn test_i64_rotl() {
+    // Test I64Rotl: rotate left
+    let body = [
+        Operator::I64Const {
+            value: 0x123456789ABCDEFi64,
+        },
+        Operator::I64Const { value: 4 },
+        Operator::I64Rotl,
+        Operator::I32WrapI64, // Get lower 32 bits
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 0x0123456789ABCDEF rotated left by 4 = 0x123456789ABCDEF0
+    // Lower 32 bits = 0x9ABCDEF0
+    assert_eq!(f() as u32, 0x9ABCDEF0);
+}
+
+#[test]
+fn test_i64_rotr() {
+    // Test I64Rotr: rotate right
+    let body = [
+        Operator::I64Const {
+            value: 0x123456789ABCDEFi64,
+        },
+        Operator::I64Const { value: 4 },
+        Operator::I64Rotr,
+        Operator::I32WrapI64, // Get lower 32 bits
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 0x0123456789ABCDEF rotated right by 4 = 0xF0123456789ABCDE
+    // Lower 32 bits = 0x789ABCDE
+    assert_eq!(f() as u32, 0x789ABCDE);
+}
+
+#[test]
+fn test_i64_clz() {
+    // Test I64Clz: count leading zeros
+    let body = [
+        Operator::I64Const {
+            value: 0x0000000100000000i64,
+        },
+        Operator::I64Clz,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 0x0000000100000000 has 31 leading zeros
+    assert_eq!(f(), 31);
+}
+
+#[test]
+fn test_i64_clz_zero() {
+    // Test I64Clz with zero
+    let body = [
+        Operator::I64Const { value: 0 },
+        Operator::I64Clz,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 64); // All zeros
+}
+
+#[test]
+fn test_i64_ctz() {
+    // Test I64Ctz: count trailing zeros
+    let body = [
+        Operator::I64Const {
+            value: 0x0000000100000000i64,
+        },
+        Operator::I64Ctz,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 0x0000000100000000 has 32 trailing zeros
+    assert_eq!(f(), 32);
+}
+
+#[test]
+fn test_i64_ctz_zero() {
+    // Test I64Ctz with zero
+    let body = [
+        Operator::I64Const { value: 0 },
+        Operator::I64Ctz,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 64); // All zeros
+}
+
+#[test]
+fn test_i64_popcnt() {
+    // Test I64Popcnt: population count (number of 1 bits)
+    let body = [
+        Operator::I64Const {
+            value: 0xFFFFFFFFFFFFFFFFu64 as i64,
+        },
+        Operator::I64Popcnt,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 64); // All 64 bits set
+}
+
+#[test]
+fn test_i64_popcnt_mixed() {
+    // Test I64Popcnt with alternating bits
+    let body = [
+        Operator::I64Const {
+            value: 0x5555555555555555u64 as i64,
+        },
+        Operator::I64Popcnt,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 32); // Half of 64 bits set
+}
+
+#[test]
+fn test_i64_eqz() {
+    // Test I64Eqz: check if zero
+    let body = [
+        Operator::I64Const { value: 0 },
+        Operator::I64Eqz,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 0 == 0 is true
+}
+
+#[test]
+fn test_i64_eqz_nonzero() {
+    // Test I64Eqz with non-zero
+    let body = [
+        Operator::I64Const { value: 42 },
+        Operator::I64Eqz,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 0); // 42 == 0 is false
+}
+
+#[test]
+fn test_i64_eq() {
+    // Test I64Eq: check equality
+    let body = [
+        Operator::I64Const {
+            value: 0x123456789ABCDEFi64,
+        },
+        Operator::I64Const {
+            value: 0x123456789ABCDEFi64,
+        },
+        Operator::I64Eq,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // Equal
+}
+
+#[test]
+fn test_i64_ne() {
+    // Test I64Ne: check inequality
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 200 },
+        Operator::I64Ne,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // Not equal
+}
+
+#[test]
+fn test_i64_lt_s() {
+    // Test I64LtS: signed less than
+    let body = [
+        Operator::I64Const { value: -1 },
+        Operator::I64Const { value: 1 },
+        Operator::I64LtS,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // -1 < 1 (signed)
+}
+
+#[test]
+fn test_i64_lt_u() {
+    // Test I64LtU: unsigned less than
+    let body = [
+        Operator::I64Const { value: 1 },
+        Operator::I64Const { value: -1i64 }, // Very large unsigned
+        Operator::I64LtU,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 1 < 0xFFFFFFFFFFFFFFFF (unsigned)
+}
+
+#[test]
+fn test_i64_gt_s() {
+    // Test I64GtS: signed greater than
+    let body = [
+        Operator::I64Const { value: 1 },
+        Operator::I64Const { value: -1 },
+        Operator::I64GtS,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 1 > -1 (signed)
+}
+
+#[test]
+fn test_i64_gt_u() {
+    // Test I64GtU: unsigned greater than
+    let body = [
+        Operator::I64Const { value: -1i64 }, // Very large unsigned
+        Operator::I64Const { value: 1 },
+        Operator::I64GtU,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 0xFFFFFFFFFFFFFFFF > 1 (unsigned)
+}
+
+#[test]
+fn test_i64_le_s() {
+    // Test I64LeS: signed less than or equal
+    let body = [
+        Operator::I64Const { value: 5 },
+        Operator::I64Const { value: 5 },
+        Operator::I64LeS,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 5 <= 5
+}
+
+#[test]
+fn test_i64_le_u() {
+    // Test I64LeU: unsigned less than or equal
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 200 },
+        Operator::I64LeU,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 100 <= 200
+}
+
+#[test]
+fn test_i64_ge_s() {
+    // Test I64GeS: signed greater than or equal
+    let body = [
+        Operator::I64Const { value: 100 },
+        Operator::I64Const { value: 100 },
+        Operator::I64GeS,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 100 >= 100
+}
+
+#[test]
+fn test_i64_ge_u() {
+    // Test I64GeU: unsigned greater than or equal
+    let body = [
+        Operator::I64Const { value: -1i64 }, // Very large unsigned
+        Operator::I64Const { value: 1 },
+        Operator::I64GeU,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 1); // 0xFFFFFFFFFFFFFFFF >= 1 (unsigned)
+}
+
+// ============================================================================
+// Additional Conversion Tests
+// ============================================================================
+
+#[test]
+fn test_i64_trunc_f32_s() {
+    // Test I64TruncF32S: truncate f32 to signed i64
+    let body = [
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0xC2C80000)), // -100.0f
+        },
+        Operator::I64TruncF32S,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), -100);
+}
+
+#[test]
+fn test_i64_trunc_f32_u() {
+    // Test I64TruncF32U: truncate f32 to unsigned i64
+    let body = [
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0x42C80000)), // 100.0f
+        },
+        Operator::I64TruncF32U,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 100);
+}
+
+#[test]
+fn test_i64_trunc_f64_u() {
+    // Test I64TruncF64U: truncate f64 to unsigned i64
+    let body = [
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x4059000000000000)), // 100.0
+        },
+        Operator::I64TruncF64U,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 100);
+}
+
+#[test]
+fn test_i32_trunc_f64_u() {
+    // Test I32TruncF64U: truncate f64 to unsigned i32
+    let body = [
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x4059000000000000)), // 100.0
+        },
+        Operator::I32TruncF64U,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 100);
+}
+
+#[test]
+fn test_f32_convert_i64_s() {
+    // Test F32ConvertI64S: convert signed i64 to f32
+    let body = [
+        Operator::I64Const { value: -1000000 },
+        Operator::F32ConvertI64S,
+        Operator::I32ReinterpretF32,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // -1000000.0f = 0xC9742400
+    assert_eq!(f() as u32, 0xC9742400);
+}
+
+#[test]
+fn test_f32_convert_i64_u() {
+    // Test F32ConvertI64U: convert unsigned i64 to f32
+    let body = [
+        Operator::I64Const { value: 1000000 },
+        Operator::F32ConvertI64U,
+        Operator::I32ReinterpretF32,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 1000000.0f = 0x49742400
+    assert_eq!(f() as u32, 0x49742400);
+}
+
+#[test]
+fn test_f64_convert_i32_u() {
+    // Test F64ConvertI32U: convert unsigned i32 to f64
+    let body = [
+        Operator::I32Const {
+            value: 0xFFFFFFFFu32 as i32,
+        }, // Max u32
+        Operator::F64ConvertI32U,
+        Operator::I64ReinterpretF64,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 4294967295.0 = 0x41EFFFFFFFE00000, upper 32 bits = 0x41EFFFFF
+    assert_eq!(f() as u32, 0x41EFFFFF);
+}
+
+#[test]
+fn test_f64_convert_i64_u() {
+    // Test F64ConvertI64U: convert unsigned i64 to f64
+    let body = [
+        Operator::I64Const { value: 1000000 },
+        Operator::F64ConvertI64U,
+        Operator::I64ReinterpretF64,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 1000000.0 = 0x412E848000000000, upper 32 bits = 0x412E8480
+    assert_eq!(f() as u32, 0x412E8480);
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
+#[test]
+fn test_i32_wrap_i64_edge() {
+    // Test I32WrapI64 with a large i64 value
+    let body = [
+        Operator::I64Const {
+            value: -4294967230i64, // 0xFFFFFFFF00000042 as signed i64
+        },
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    assert_eq!(f(), 0x42); // Only lower 32 bits
+}
+
+#[test]
+fn test_i64_extend_i32_s_edge() {
+    // Test I64ExtendI32S with max negative
+    let body = [
+        Operator::I32Const {
+            value: 0x80000000u32 as i32,
+        }, // INT32_MIN
+        Operator::I64ExtendI32S,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // INT32_MIN sign-extended should have all 1s in upper 32 bits
+    assert_eq!(f(), -1);
+}
+
+#[test]
+fn test_i64_extend_i32_u_edge() {
+    // Test I64ExtendI32U with max value
+    let body = [
+        Operator::I32Const {
+            value: 0xFFFFFFFFu32 as i32,
+        }, // UINT32_MAX
+        Operator::I64ExtendI32U,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // UINT32_MAX zero-extended should have all 0s in upper 32 bits
+    assert_eq!(f(), 0);
+}
+
+// ============================================================================
+// Float Edge Cases
+// ============================================================================
+
+#[test]
+fn test_f32_neg_zero() {
+    // Test F32Neg with negative zero
+    let body = [
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0x80000000)), // -0.0
+        },
+        Operator::F32Neg,
+        Operator::I32ReinterpretF32,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // neg(-0.0) = +0.0
+    assert_eq!(f() as u32, 0x00000000);
+}
+
+#[test]
+fn test_f64_neg_zero() {
+    // Test F64Neg with negative zero
+    let body = [
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x8000000000000000)), // -0.0
+        },
+        Operator::F64Neg,
+        Operator::I64ReinterpretF64,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // neg(-0.0) = +0.0, upper 32 bits = 0x00000000
+    assert_eq!(f() as u32, 0x00000000);
+}
+
+#[test]
+fn test_f32_abs_negative_zero() {
+    // Test F32Abs with negative zero
+    let body = [
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0x80000000)), // -0.0
+        },
+        Operator::F32Abs,
+        Operator::I32ReinterpretF32,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // abs(-0.0) = +0.0
+    assert_eq!(f() as u32, 0x00000000);
+}
+
+#[test]
+fn test_f64_abs_negative_zero() {
+    // Test F64Abs with negative zero
+    let body = [
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x8000000000000000)), // -0.0
+        },
+        Operator::F64Abs,
+        Operator::I64ReinterpretF64,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // abs(-0.0) = +0.0, upper 32 bits = 0x00000000
+    assert_eq!(f() as u32, 0x00000000);
+}
+
+#[test]
+fn test_f32_copysign_zero_signs() {
+    // Test F32Copysign with positive magnitude and negative sign
+    let body = [
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0x3F800000)), // 1.0
+        },
+        Operator::F32Const {
+            value: Ieee32::from(f32::from_bits(0x80000000)), // -0.0
+        },
+        Operator::F32Copysign,
+        Operator::I32ReinterpretF32,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // copysign(1.0, -0.0) = -1.0
+    assert_eq!(f() as u32, 0xBF800000);
+}
+
+#[test]
+fn test_f64_copysign_zero_signs() {
+    // Test F64Copysign with positive magnitude and negative sign
+    let body = [
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x3FF0000000000000)), // 1.0
+        },
+        Operator::F64Const {
+            value: Ieee64::from(f64::from_bits(0x8000000000000000)), // -0.0
+        },
+        Operator::F64Copysign,
+        Operator::I64ReinterpretF64,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // copysign(1.0, -0.0) = -1.0, upper 32 bits = 0xBFF00000
+    assert_eq!(f() as u32, 0xBFF00000);
+}
+
+// ============================================================================
+// Integer Overflow/Underflow Tests
+// ============================================================================
+
+#[test]
+fn test_i32_add_overflow() {
+    // Test I32Add overflow wraps around
+    let body = [
+        Operator::I32Const {
+            value: 0x7FFFFFFFi32,
+        }, // INT32_MAX
+        Operator::I32Const { value: 1 },
+        Operator::I32Add,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // INT32_MAX + 1 wraps to INT32_MIN
+    assert_eq!(f(), i32::MIN);
+}
+
+#[test]
+fn test_i32_sub_underflow() {
+    // Test I32Sub underflow wraps around
+    let body = [
+        Operator::I32Const {
+            value: 0x80000000u32 as i32,
+        }, // INT32_MIN
+        Operator::I32Const { value: 1 },
+        Operator::I32Sub,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // INT32_MIN - 1 wraps to INT32_MAX
+    assert_eq!(f(), i32::MAX);
+}
+
+#[test]
+fn test_i32_mul_overflow() {
+    // Test I32Mul overflow wraps around
+    let body = [
+        Operator::I32Const { value: 0x10000 },
+        Operator::I32Const { value: 0x10000 },
+        Operator::I32Mul,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // 0x10000 * 0x10000 = 0x100000000, wraps to 0
+    assert_eq!(f(), 0);
+}
+
+#[test]
+fn test_i64_add_overflow() {
+    // Test I64Add overflow wraps around
+    let body = [
+        Operator::I64Const {
+            value: 0x7FFFFFFFFFFFFFFFi64,
+        }, // INT64_MAX
+        Operator::I64Const { value: 1 },
+        Operator::I64Add,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // INT64_MAX + 1 wraps to INT64_MIN, upper 32 bits = 0x80000000
+    assert_eq!(f() as u32, 0x80000000);
+}
+
+#[test]
+fn test_i64_sub_underflow() {
+    // Test I64Sub underflow wraps around
+    let body = [
+        Operator::I64Const {
+            value: 0x8000000000000000u64 as i64,
+        }, // INT64_MIN
+        Operator::I64Const { value: 1 },
+        Operator::I64Sub,
+        Operator::I64Const { value: 32 },
+        Operator::I64ShrU,
+        Operator::I32WrapI64,
+        Operator::End,
+    ];
+
+    let func = compile_simple(&[], &[ValType::I32], &[], &body).expect("Compilation failed");
+    let f = func.as_fn_0();
+    // INT64_MIN - 1 wraps to INT64_MAX, upper 32 bits = 0x7FFFFFFF
+    assert_eq!(f() as u32, 0x7FFFFFFF);
 }

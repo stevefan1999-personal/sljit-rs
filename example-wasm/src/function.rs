@@ -10,9 +10,10 @@ use sljit::{
 use wasmparser::{Operator, ValType};
 
 use crate::CompileError;
+use crate::module::InternalFuncType;
 use crate::{
-    Block, DivOp, FloatBinaryOp, FloatUnaryOp, FuncType, FunctionEntry, GlobalInfo, LocalVar,
-    MemoryInfo, StackValue, TableEntry, UnaryOp, helpers,
+    Block, DivOp, FloatBinaryOp, FloatUnaryOp, FunctionEntry, GlobalInfo, LocalVar, MemoryInfo,
+    StackValue, TableEntry, UnaryOp, helpers,
 };
 
 /// WebAssembly function compiler
@@ -37,7 +38,7 @@ pub struct Function {
     /// Tables for indirect calls
     tables: Vec<TableEntry>,
     /// Function types for call_indirect
-    func_types: Vec<FuncType>,
+    func_types: Vec<InternalFuncType>,
 }
 
 // Helper macro for stack underflow error
@@ -92,7 +93,7 @@ impl Function {
 
     /// Set function types for call_indirect
     #[inline(always)]
-    pub fn set_func_types(&mut self, func_types: Vec<FuncType>) {
+    pub fn set_func_types(&mut self, func_types: Vec<InternalFuncType>) {
         self.func_types = func_types;
     }
 
@@ -1256,9 +1257,17 @@ impl Function {
     /// Compile a binary arithmetic operation using functional dispatch
     fn compile_binary_op(&mut self, emitter: &mut Emitter, op: Op2) -> Result<(), CompileError> {
         let (b, a) = (self.pop_value()?, self.pop_value()?);
+
+        // If b is a register, keep it occupied while we prepare a to avoid conflicts
+        if let StackValue::Register(reg_b) = &b {
+            self.occupied_registers.set(reg_b.index(), true);
+        }
+
         let reg_a = self.ensure_in_register(emitter, a)?;
         let operand_b = b.to_operand();
         emitter.emit_op2((op, 0), reg_a, reg_a, operand_b)?;
+
+        // Now free b's register
         if let StackValue::Register(reg_b) = b {
             self.occupied_registers.set(reg_b.index(), false);
         }
@@ -2428,14 +2437,9 @@ impl Function {
 
         // Clone the needed data to avoid borrow issues
         let func_code_ptr = self.functions[function_index as usize].code_ptr;
-        let func_params = self.functions[function_index as usize]
-            .func_type
-            .params
-            .clone();
-        let func_results = self.functions[function_index as usize]
-            .func_type
-            .results
-            .clone();
+        let func_code_ptr_ptr = self.functions[function_index as usize].code_ptr_ptr;
+        let func_params = self.functions[function_index as usize].params.clone();
+        let func_results = self.functions[function_index as usize].results.clone();
         let param_count = func_params.len();
         let result_count = func_results.len();
 
@@ -2481,6 +2485,7 @@ impl Function {
             ScratchRegister::R1,
             ScratchRegister::R2,
         ];
+        let num_arg_regs = args.len().min(3);
         for (i, arg) in args.into_iter().take(3).enumerate() {
             let reg = self.ensure_in_register(emitter, arg)?;
             if reg != arg_regs[i] {
@@ -2489,9 +2494,25 @@ impl Function {
             }
         }
 
+        // Mark argument registers as occupied to prevent them from being used for addr_reg
+        for reg in arg_regs.iter().take(num_arg_regs) {
+            self.occupied_registers.set(reg.index(), true);
+        }
+
         // Load function address and call
+        // For wasm functions (code_ptr_ptr is Some), use indirect load since code_ptr
+        // may be updated after compilation. For host functions, use direct code_ptr.
         let addr_reg = self.alloc_register(emitter)?;
-        emitter.mov(0, addr_reg, func_code_ptr)?;
+        if let Some(ptr_ptr) = func_code_ptr_ptr {
+            // Load the code_ptr through the pointer (indirect call)
+            // First load the address of code_ptr into addr_reg
+            emitter.mov(0, addr_reg, ptr_ptr as usize)?;
+            // Then dereference to get the actual code_ptr
+            emitter.mov(0, addr_reg, mem_offset(addr_reg, 0))?;
+        } else {
+            // Direct call with the code_ptr value
+            emitter.mov(0, addr_reg, func_code_ptr)?;
+        }
 
         let arg_types = Self::make_arg_types(&func_params, &func_results);
         emitter.icall(JumpType::Call as i32, arg_types, addr_reg)?;
@@ -2507,10 +2528,20 @@ impl Function {
             )?;
         }
 
+        // Free argument registers (except R0 if it's used for result)
+        for (i, reg) in arg_regs.iter().enumerate().take(num_arg_regs) {
+            if result_count == 0 || i != 0 {
+                self.occupied_registers.set(reg.index(), false);
+            }
+        }
+
         // Handle result
         if result_count > 0 {
-            self.occupied_registers
-                .set(ScratchRegister::R0.index(), true);
+            // R0 is already marked occupied from arg setup if num_arg_regs > 0
+            if num_arg_regs == 0 {
+                self.occupied_registers
+                    .set(ScratchRegister::R0.index(), true);
+            }
             self.stack.push(StackValue::Register(ScratchRegister::R0));
         }
 
@@ -2615,12 +2646,18 @@ impl Function {
             ScratchRegister::R1,
             ScratchRegister::R2,
         ];
+        let num_arg_regs = args.len().min(3);
         for (i, arg) in args.into_iter().take(3).enumerate() {
             let reg = self.ensure_in_register(emitter, arg)?;
             if reg != arg_regs[i] {
                 emitter.mov(0, arg_regs[i], reg)?;
                 self.occupied_registers.set(reg.index(), false);
             }
+        }
+
+        // Mark argument registers as occupied to prevent them from being used for addr_reg
+        for reg in arg_regs.iter().take(num_arg_regs) {
+            self.occupied_registers.set(reg.index(), true);
         }
 
         // Reload the function pointer
@@ -2651,10 +2688,20 @@ impl Function {
             )?;
         }
 
+        // Free argument registers (except R0 if it's used for result)
+        for (i, reg) in arg_regs.iter().enumerate().take(num_arg_regs) {
+            if result_count == 0 || i != 0 {
+                self.occupied_registers.set(reg.index(), false);
+            }
+        }
+
         // Handle result
         if result_count > 0 {
-            self.occupied_registers
-                .set(ScratchRegister::R0.index(), true);
+            // R0 is already marked occupied from arg setup if num_arg_regs > 0
+            if num_arg_regs == 0 {
+                self.occupied_registers
+                    .set(ScratchRegister::R0.index(), true);
+            }
             self.stack.push(StackValue::Register(ScratchRegister::R0));
         }
 

@@ -4,43 +4,58 @@
 //! how to use sljit-rs's high-level Emitter API to JIT-compile WebAssembly.
 //!
 //! Inspired by pwart's architecture, but simplified for clarity.
+//!
+//! # Architecture
+//!
+//! The runtime follows a Store-based architecture similar to wasmtime/wasmi:
+//!
+//! - `Engine` - Compilation configuration holder (stateless, shareable)
+//! - `Store` - Runtime state container that owns all instances
+//! - `Module` - Compiled WebAssembly module (immutable after creation)
+//! - `Instance` - Runtime instantiation of a Module with resolved imports
+//! - `Linker` - Helper for building import resolvers
+//!
+//! # Example
+//!
+//! ```ignore
+//! use example_wasm::{Engine, Store, Module, Linker, Value};
+//! use std::sync::Arc;
+//!
+//! // Create engine and store
+//! let engine = Arc::new(Engine::default());
+//! let mut store = Store::new(engine.clone());
+//!
+//! // Parse module
+//! let wasm = wat::parse_str(r#"(module (func (export "answer") (result i32) i32.const 42))"#)?;
+//! let module = Module::new(&engine, &wasm)?;
+//!
+//! // Instantiate
+//! let linker = Linker::new();
+//! let instance = linker.instantiate(&mut store, &module)?;
+//!
+//! // Call exported function
+//! let func_idx = instance.get_func(&store, "answer").unwrap();
+//! let result = store.call(func_idx, &[])?;
+//! assert_eq!(result, vec![Value::I32(42)]);
+//! ```
 
-use std::error::Error;
+use sljit::sys;
+use sljit::{FloatRegister, Operand, SavedRegister, ScratchRegister, mem_sp_offset};
 
-use bitvec::prelude::*;
-use sljit::sys::{
-    self,
+// Core types module
+pub mod types;
+
+// Re-export core types for public API
+pub use types::{
+    CompileError, Engine, EngineConfig, FuncIdx, GlobalIdx, InstantiationError, MemoryIdx,
+    OptLevel, RefType, TableIdx, Trap, TrapKind, Value, WasmFeatures,
 };
-use sljit::{
-    FloatRegister, Operand, SavedRegister, ScratchRegister, mem_sp_offset,
-};
-use wasmparser::{Import, Operator, ValType};
+// Re-export our ValType (not wasmparser's)
+pub use types::ValType;
+// Re-export FuncType from types module
+pub use types::FuncType;
 
 pub(crate) mod helpers;
-
-/// Errors that can occur during compilation
-#[derive(Debug)]
-pub enum CompileError {
-    Parse(String),
-    Sljit(sys::ErrorCode),
-    Unsupported(String),
-    Invalid(String),
-    RegisterAllocationFailed,
-}
-
-impl From<sys::ErrorCode> for CompileError {
-    #[inline(always)]
-    fn from(e: sys::ErrorCode) -> Self {
-        CompileError::Sljit(e)
-    }
-}
-
-impl From<wasmparser::BinaryReaderError> for CompileError {
-    #[inline(always)]
-    fn from(e: wasmparser::BinaryReaderError) -> Self {
-        CompileError::Parse(e.to_string())
-    }
-}
 
 /// Binary operation type for floats
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +86,7 @@ pub enum UnaryOp {
 
 /// Division operation type
 #[derive(Clone, Copy, Debug)]
-enum DivOp {
+pub(crate) enum DivOp {
     DivS,
     DivU,
     RemS,
@@ -80,7 +95,7 @@ enum DivOp {
 
 /// Represents a value on the operand stack during compilation
 #[derive(Clone, Debug)]
-pub enum StackValue {
+pub(crate) enum StackValue {
     Register(ScratchRegister),
     FloatRegister(FloatRegister),
     Stack(i32),
@@ -92,7 +107,7 @@ pub enum StackValue {
 
 impl StackValue {
     #[inline(always)]
-    fn to_operand(&self) -> Operand {
+    pub(crate) fn to_operand(&self) -> Operand {
         match self {
             Self::Register(r) => (*r).into(),
             Self::FloatRegister(r) => (*r).into(),
@@ -110,33 +125,34 @@ impl StackValue {
 
 /// Information about a control flow block
 #[derive(Clone, Debug, Default)]
-pub struct Block {
-    label: Option<sys::Label>,
-    end_jumps: Vec<sys::Jump>,
-    else_jump: Option<sys::Jump>,
-    stack_depth: usize,
-    result_offset: Option<i32>,
+pub(crate) struct Block {
+    pub(crate) label: Option<sys::Label>,
+    pub(crate) end_jumps: Vec<sys::Jump>,
+    pub(crate) else_jump: Option<sys::Jump>,
+    pub(crate) stack_depth: usize,
+    pub(crate) result_offset: Option<i32>,
 }
 
 /// Local variable storage info
 #[derive(Clone, Debug)]
-pub enum LocalVar {
+pub(crate) enum LocalVar {
     Saved(SavedRegister),
     Stack(i32),
 }
 
-/// Global variable info
+/// Global variable info (compiler internal representation)
+/// Uses wasmparser::ValType internally for compiler compatibility
 #[derive(Clone, Debug)]
 pub struct GlobalInfo {
     /// Pointer to the global's memory location
     pub ptr: usize,
     /// Whether the global is mutable
     pub mutable: bool,
-    /// Value type of the global
-    pub val_type: ValType,
+    /// Value type of the global (uses wasmparser::ValType for compiler)
+    pub val_type: wasmparser::ValType,
 }
 
-/// Memory instance info
+/// Memory instance info (compiler internal representation)
 #[derive(Clone, Debug)]
 pub struct MemoryInfo {
     /// Pointer to the memory data
@@ -149,21 +165,23 @@ pub struct MemoryInfo {
     pub grow_callback: Option<extern "C" fn(current_pages: u32, delta: u32) -> i32>,
 }
 
-/// Function signature for calls
-#[derive(Clone, Debug)]
-pub struct FuncType {
-    pub params: Vec<ValType>,
-    pub results: Vec<ValType>,
-}
-
-/// Compiled function entry for direct calls
+/// Compiled function entry for direct calls (compiler internal)
 #[derive(Clone, Debug)]
 pub struct FunctionEntry {
-    /// Pointer to the compiled function code
+    /// Pointer to the compiled function code (used for host functions)
     pub code_ptr: usize,
-    /// Function type
-    pub func_type: FuncType,
+    /// Pointer to a location storing the code_ptr (used for wasm functions)
+    /// This enables indirect calls that work even when code_ptr is updated later
+    pub code_ptr_ptr: Option<*const usize>,
+    /// Function type (uses wasmparser types internally)
+    pub params: Vec<wasmparser::ValType>,
+    pub results: Vec<wasmparser::ValType>,
 }
+
+// Safety: FunctionEntry contains raw pointers but they are only used for reading
+// code_ptr values that are stable once set during compilation
+unsafe impl Send for FunctionEntry {}
+unsafe impl Sync for FunctionEntry {}
 
 /// Table entry for indirect calls
 #[derive(Clone, Debug)]
@@ -174,136 +192,18 @@ pub struct TableEntry {
     pub size: u32,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Engine {}
+pub mod instance;
+pub mod module;
+pub mod store;
 
-#[derive(Clone, Debug)]
-pub struct Module<'a> {
-    engine: &'a Engine,
+// Re-export store types
+pub use store::{Func, Global, HostFunc, Memory, PAGE_SIZE, Store, Table, WasmFunc};
 
-    /// Import entries
-    imports: Vec<Import<'a>>,
+// Re-export instance types
+pub use instance::{Instance, Linker};
 
-    /// Global variables
-    globals: Vec<GlobalInfo>,
-    /// Memory instance
-    memory: Option<MemoryInfo>,
-    /// Function table for direct calls
-    functions: Vec<FunctionEntry>,
-    /// Tables for indirect calls
-    tables: Vec<TableEntry>,
-    /// Function types for call_indirect
-    func_types: Vec<FuncType>,
-}
-
-impl<'a> Module<'a> {
-    pub fn new(engine: &'a Engine, wasm: &'a [u8]) -> Result<Self, Box<dyn Error + 'a>> {
-        let mut imports = vec![];
-
-        let parser = wasmparser::Parser::new(0);
-        for payload in parser.parse_all(wasm) {
-            match payload? {
-                wasmparser::Payload::TypeSection(types) => {
-                    for ty in types {
-                        let _ty = ty?;
-                    }
-                }
-                wasmparser::Payload::ImportSection(import_section) => {
-                    for import in import_section {
-                        match import? {
-                            wasmparser::Imports::Single(_, import) => {
-                                imports.push(import);
-                            }
-                            wasmparser::Imports::Compact1 {
-                                module: _,
-                                items: _,
-                            } => todo!(),
-                            wasmparser::Imports::Compact2 {
-                                module: _,
-                                ty: _,
-                                names: _,
-                            } => todo!(),
-                        }
-                    }
-                }
-                wasmparser::Payload::FunctionSection(functions) => {
-                    for func in functions {
-                        let _func = func?;
-                    }
-                }
-                wasmparser::Payload::CodeSectionStart { count: _, .. } => {
-                    todo!()
-                }
-                wasmparser::Payload::CodeSectionEntry(body) => {
-                    let _body: Vec<Operator> = body
-                        .get_operators_reader()?
-                        .into_iter()
-                        .collect::<Result<_, _>>()?;
-                }
-                wasmparser::Payload::Version {
-                    num: _,
-                    encoding: _,
-                    range: _,
-                } => todo!(),
-                wasmparser::Payload::TableSection(section_limited) => {
-                    for table in section_limited {
-                        let _table = table?;
-                    }
-                }
-                wasmparser::Payload::MemorySection(section_limited) => {
-                    for memory in section_limited {
-                        let _memory = memory?;
-                    }
-                }
-                wasmparser::Payload::TagSection(section_limited) => {
-                    for tag in section_limited {
-                        let _tag = tag?;
-                    }
-                }
-                wasmparser::Payload::GlobalSection(section_limited) => {
-                    for global in section_limited {
-                        let _global = global?;
-                    }
-                }
-                wasmparser::Payload::ExportSection(section_limited) => {
-                    for export in section_limited {
-                        let _export = export?;
-                    }
-                }
-                wasmparser::Payload::StartSection { func: _, range: _ } => todo!(),
-                wasmparser::Payload::ElementSection(section_limited) => {
-                    for element in section_limited {
-                        let _element = element?;
-                    }
-                }
-                wasmparser::Payload::DataCountSection { count: _, range: _ } => todo!(),
-                wasmparser::Payload::DataSection(section_limited) => {
-                    for data in section_limited {
-                        let _data = data?;
-                    }
-                }
-                wasmparser::Payload::CustomSection(_custom_section_reader) => todo!(),
-                wasmparser::Payload::UnknownSection {
-                    id: _,
-                    contents: _,
-                    range: _,
-                } => todo!(),
-                wasmparser::Payload::End(_) => todo!(),
-                _ => todo!(),
-            }
-        }
-
-        Ok(Self {
-            imports,
-            engine,
-            globals: todo!(),
-            memory: todo!(),
-            functions: todo!(),
-            tables: todo!(),
-            func_types: todo!(),
-        })
-    }
-}
+// Re-export module types
+pub use module::Module;
 
 #[cfg(test)]
 mod tests;
