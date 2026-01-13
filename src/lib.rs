@@ -967,6 +967,30 @@ impl<'a> Emitter<'a> {
         div_f32, sys::Fop2::DivF32, f2;
     }
 
+    /// Emits an `FSET32` instruction to load a 32-bit float immediate into a float register.
+    #[inline(always)]
+    pub fn emit_fset32(
+        &mut self,
+        freg: impl FloatRegisterType,
+        value: f32,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (freg, _) = freg.into().into();
+        self.compiler.emit_fset32(freg, value)?;
+        Ok(self)
+    }
+
+    /// Emits an `FSET64` instruction to load a 64-bit float immediate into a float register.
+    #[inline(always)]
+    pub fn emit_fset64(
+        &mut self,
+        freg: impl FloatRegisterType,
+        value: f64,
+    ) -> Result<&mut Self, ErrorCode> {
+        let (freg, _) = freg.into().into();
+        self.compiler.emit_fset64(freg, value)?;
+        Ok(self)
+    }
+
     define_emitter_ops! {
         /// Emits a `COPYSIGN.F64` instruction.
         copysign_f64, sys::Fop2r::CopysignF64, f2r;

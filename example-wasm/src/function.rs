@@ -301,32 +301,14 @@ impl Function {
             }
             StackValue::ConstF32(bits) => {
                 let reg = self.alloc_float_register(emitter)?;
-                // Store float bits to stack, then load as float
-                // Ensure 8-byte alignment for float operations
-                let temp_offset = (self.frame_offset + 7) & !7;
-                self.frame_offset = temp_offset + 8;
-                emitter.mov32(0, mem_sp_offset(temp_offset), bits as i32)?;
-                emitter.mov_f32(0, reg, mem_sp_offset(temp_offset))?;
+                // Use emit_fset32 to directly load the float constant into the register
+                emitter.emit_fset32(reg, f32::from_bits(bits))?;
                 Ok(reg)
             }
             StackValue::ConstF64(bits) => {
                 let reg = self.alloc_float_register(emitter)?;
-                // Store float bits to stack, then load as float
-                // Ensure 8-byte alignment for f64 operations
-                let temp_offset = (self.frame_offset + 7) & !7;
-                self.frame_offset = temp_offset + 8;
-
-                #[cfg(target_pointer_width = "64")]
-                {
-                    emitter.mov(0, mem_sp_offset(temp_offset), bits as usize)?;
-                }
-                #[cfg(not(target_pointer_width = "64"))]
-                {
-                    // On 32-bit, need to store two halves
-                    emitter.mov32(0, mem_sp_offset(temp_offset), (bits & 0xFFFFFFFF) as i32)?;
-                    emitter.mov32(0, mem_sp_offset(temp_offset + 4), (bits >> 32) as i32)?;
-                }
-                emitter.mov_f64(0, reg, mem_sp_offset(temp_offset))?;
+                // Use emit_fset64 to directly load the float constant into the register
+                emitter.emit_fset64(reg, f64::from_bits(bits))?;
                 Ok(reg)
             }
             _ => Err(CompileError::Invalid(
