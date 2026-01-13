@@ -11,8 +11,7 @@ use core::mem::transmute;
 #[test]
 fn test_add3_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(0, arg_types!(W -> [W, W, W]), regs!(1), regs!(3), 0)
             .unwrap()
@@ -37,7 +36,7 @@ fn test_add3_emitter() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(c_int, c_int, c_int) -> c_int = transmute(code.get());
         assert_eq!(func(4, 5, 6), 4 + 5 + 6);
     }
@@ -46,8 +45,7 @@ fn test_add3_emitter() {
 #[test]
 fn test_memory_access_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(0, arg_types!(W -> [P]), regs!(2), regs!(1), 0)
             .unwrap()
@@ -74,7 +72,7 @@ fn test_memory_access_emitter() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let data: [isize; 2] = [10, 20];
         let func: fn(p: *const isize) -> isize = transmute(code.get());
         assert_eq!(func(data.as_ptr()), 30);
@@ -84,8 +82,7 @@ fn test_memory_access_emitter() {
 #[test]
 fn test_add32_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(0, arg_types!(32 -> [32, 32]), regs!(1), regs!(2), 0)
             .unwrap()
@@ -95,7 +92,7 @@ fn test_add32_emitter() {
             .emit_return(ReturnOp::Mov32, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(i32, i32) -> i32 = transmute(code.get());
         assert_eq!(func(10, 20), 30);
     }
@@ -104,8 +101,7 @@ fn test_add32_emitter() {
 #[test]
 fn test_rotate_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(0, arg_types!(W -> [W, W]), regs!(1), regs!(2), 0)
             .unwrap()
@@ -115,7 +111,7 @@ fn test_rotate_emitter() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize, isize) -> isize = transmute(code.get());
         assert_eq!(func(0b1011, 2), 0b101100);
     }
@@ -124,8 +120,7 @@ fn test_rotate_emitter() {
 #[test]
 fn test_add_f64_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(
                 0,
@@ -146,7 +141,7 @@ fn test_add_f64_emitter() {
             .emit_return(ReturnOp::MovF64, FloatRegister::FR0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(f64, f64) -> f64 = transmute(code.get());
         assert_eq!(func(10.5, 20.25), 30.75);
     }
@@ -155,8 +150,7 @@ fn test_add_f64_emitter() {
 #[test]
 fn test_conv_f64_from_s32_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(
                 0,
@@ -172,7 +166,7 @@ fn test_conv_f64_from_s32_emitter() {
             .emit_return(ReturnOp::MovF64, FloatRegister::FR0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(i32) -> f64 = transmute(code.get());
         assert_eq!(func(42), 42.0);
     }
@@ -181,8 +175,7 @@ fn test_conv_f64_from_s32_emitter() {
 #[test]
 fn test_branch_emitter() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(0, arg_types!(W -> [W]), regs!(1), regs!(1), 0)
             .unwrap()
@@ -201,7 +194,7 @@ fn test_branch_emitter() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize) -> isize = transmute(code.get());
         assert_eq!(func(0), 10);
         assert_eq!(func(5), 20);
@@ -219,8 +212,7 @@ fn test_branch_extended() {
     let mut data: [isize; 4] = [32, -9, 43, -13];
 
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
         emitter
             .emit_enter(
                 0,
@@ -674,7 +666,7 @@ fn test_branch_extended() {
 
         emitter.return_void().unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(*mut u8, *mut isize) = transmute(code.get());
         func(buf.as_mut_ptr(), data.as_mut_ptr());
 
@@ -704,8 +696,7 @@ const fn fib(n: usize) -> usize {
 #[test]
 fn test_fib_recursive() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: fib(n) -> if n <= 1 return n else return fib(n-1) + fib(n-2)
         // Need 3 saved registers to preserve values across recursive calls:
@@ -771,7 +762,7 @@ fn test_fib_recursive() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(usize) -> usize = transmute(code.get());
 
         // Test cases
@@ -786,8 +777,7 @@ fn test_fib_recursive() {
 #[test]
 fn test_fib_iterative() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: fib(n) -> iterative version
         emitter
@@ -853,7 +843,7 @@ fn test_fib_iterative() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(usize) -> usize = transmute(code.get());
 
         // Test cases
@@ -868,8 +858,7 @@ fn test_fib_iterative() {
 #[test]
 fn test_fib_iterative_while() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: fib(n) -> iterative version
         emitter
@@ -925,7 +914,7 @@ fn test_fib_iterative_while() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(usize) -> usize = transmute(code.get());
 
         // Test cases
@@ -940,8 +929,7 @@ fn test_fib_iterative_while() {
 #[test]
 fn test_fib_iterative_loop_break() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: fib(n) -> iterative version using loop with break
         emitter
@@ -1007,7 +995,7 @@ fn test_fib_iterative_loop_break() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(usize) -> usize = transmute(code.get());
 
         // Test cases - should match test_fib_iterative
@@ -1023,8 +1011,7 @@ fn test_fib_iterative_loop_break() {
 #[test]
 fn test_while_sum() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: sum(n) -> 1 + 2 + ... + n
         emitter
@@ -1065,7 +1052,7 @@ fn test_while_sum() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize) -> isize = transmute(code.get());
 
         // sum(0) = 0 (loop doesn't execute)
@@ -1085,8 +1072,7 @@ fn test_while_sum() {
 #[test]
 fn test_do_while_at_least_once() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: count_iterations(n) -> counts how many times the loop body executes
         // do { count++; n--; } while (n > 0)
@@ -1125,7 +1111,7 @@ fn test_do_while_at_least_once() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize) -> isize = transmute(code.get());
 
         // n=0: body executes once (do-while always executes at least once)
@@ -1143,8 +1129,7 @@ fn test_do_while_at_least_once() {
 #[test]
 fn test_do_while_factorial() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: factorial(n) -> n! (assumes n >= 1)
         // do { result *= counter; counter--; } while (counter > 0)
@@ -1196,7 +1181,7 @@ fn test_do_while_factorial() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize) -> isize = transmute(code.get());
 
         // 0! = 1
@@ -1218,8 +1203,7 @@ fn test_do_while_factorial() {
 #[test]
 fn test_loop_continue() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: sum_odd(n) -> sum of odd numbers from 1 to n
         // Uses continue to skip even numbers
@@ -1270,7 +1254,7 @@ fn test_loop_continue() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R0)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(isize) -> isize = transmute(code.get());
 
         // sum_odd(0) = 0
@@ -1290,8 +1274,7 @@ fn test_loop_continue() {
 #[test]
 fn test_while_break() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: find_greater(arr, len, target) -> first value > target or -1
         emitter
@@ -1353,7 +1336,7 @@ fn test_while_break() {
             .emit_return(ReturnOp::Mov, ScratchRegister::R2)
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());
 
         let arr: [isize; 5] = [10, 20, 30, 40, 50];
@@ -1375,8 +1358,7 @@ fn test_while_break() {
 #[test]
 fn test_do_while_break() {
     unsafe {
-        let mut compiler = Compiler::new();
-        let mut emitter = Emitter::new(&mut compiler);
+        let mut emitter = Emitter::default();
 
         // Function: find_in_array(arr, len, target) -> index or -1
         // Searches for target in array, returns index or -1 if not found
@@ -1451,7 +1433,7 @@ fn test_do_while_break() {
             )
             .unwrap();
 
-        let code = compiler.generate_code();
+        let code = emitter.generate_code();
         let func: fn(*const isize, isize, isize) -> isize = transmute(code.get());
 
         let arr: [isize; 5] = [10, 20, 30, 40, 50];

@@ -3,6 +3,8 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use derive_more::Deref;
+use derive_more::DerefMut;
 pub use sljit_sys as sys;
 
 pub use sljit_sys::Compiler;
@@ -425,19 +427,19 @@ pub fn mem_indexed(base: impl Into<Operand>, index: impl Into<Operand>) -> Opera
 
 /// A memory operand with an absolute address.
 #[inline(always)]
-pub fn mem_abs(addr: isize) -> Operand {
+pub const fn mem_abs(addr: isize) -> Operand {
     Operand(sys::mem!(), addr as sljit_sw)
 }
 
 /// A memory operand relative to the stack pointer.
 #[inline(always)]
-pub fn mem_sp() -> Operand {
+pub const fn mem_sp() -> Operand {
     Operand(sys::mem!(sys::SLJIT_SP), 0)
 }
 
 /// A memory operand relative to the stack pointer with an offset.
 #[inline(always)]
-pub fn mem_sp_offset(offset: i32) -> Operand {
+pub const fn mem_sp_offset(offset: i32) -> Operand {
     Operand(sys::mem!(sys::SLJIT_SP), offset as sljit_sw)
 }
 
@@ -687,7 +689,7 @@ pub enum ReturnOp {
 }
 
 pub struct LoopContext<'a> {
-    emitter: &'a mut Emitter<'a>,
+    emitter: &'a mut Emitter,
     loop_start: Label,
     break_jumps: Vec<Jump>,
 }
@@ -734,14 +736,23 @@ impl<'a> LoopContext<'a> {
 }
 
 /// An emitter for instructions.
-pub struct Emitter<'a> {
-    compiler: &'a mut Compiler,
+#[repr(transparent)]
+#[derive(Deref, DerefMut)]
+pub struct Emitter {
+    compiler: Compiler,
 }
 
-impl<'a> Emitter<'a> {
+impl Default for Emitter {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new(Compiler::new())
+    }
+}
+
+impl Emitter {
     /// Creates a new emitter.
     #[inline(always)]
-    pub fn new(compiler: &'a mut Compiler) -> Self {
+    pub fn new(compiler: Compiler) -> Self {
         Self { compiler }
     }
 
@@ -1047,7 +1058,7 @@ impl<'a> Emitter<'a> {
     /// ```
     /// # use sljit::{Compiler, Emitter, args, regs};
     /// # let mut compiler = Compiler::new();
-    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// # let mut emitter = Emitter::default();
     /// // Function with 3 arguments of type sljit_sw and 1 return value of type sljit_sw.
     /// // The function uses 1 scratch register and 3 saved registers.
     /// // No local stack frame is allocated.
@@ -1080,7 +1091,7 @@ impl<'a> Emitter<'a> {
     /// ```
     /// # use sljit::{Compiler, Emitter, JumpType};
     /// # let mut compiler = Compiler::new();
-    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// # let mut emitter = Emitter::default();
     /// let mut jump = emitter.jump(JumpType::Jump).unwrap();
     /// let mut label = emitter.put_label().unwrap();
     /// jump.set_label(&mut label);
@@ -1102,7 +1113,7 @@ impl<'a> Emitter<'a> {
     /// ```
     /// # use sljit::{Compiler, Emitter, JumpType, args, arg_types};
     /// # let mut compiler = Compiler::new();
-    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// # let mut emitter = Emitter::default();
     /// let mut call = emitter.call(JumpType::Call, arg_types!([W, W])).unwrap();
     /// ```
     #[inline(always)]
@@ -1125,7 +1136,7 @@ impl<'a> Emitter<'a> {
     /// ```
     /// # use sljit::{Compiler, Emitter, Condition, ScratchRegister::R0};
     /// # let mut compiler = Compiler::new();
-    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// # let mut emitter = Emitter::default();
     /// let mut jump = emitter.cmp(Condition::Equal, R0, 5).unwrap();
     /// ```
     #[inline(always)]
@@ -1157,7 +1168,7 @@ impl<'a> Emitter<'a> {
     /// ```
     /// # use sljit::{Compiler, Emitter, Condition, FloatRegister::FR0};
     /// # let mut compiler = Compiler::new();
-    /// # let mut emitter = Emitter::new(&mut compiler);
+    /// # let mut emitter = Emitter::default();
     /// let mut jump = emitter.fcmp(Condition::FEqual, FR0, 5.0f64).unwrap();
     /// ```
     #[inline(always)]
@@ -1294,8 +1305,8 @@ impl<'a> Emitter<'a> {
         else_branch: E,
     ) -> Result<&mut Self, ErrorCode>
     where
-        T: FnOnce(&mut Emitter<'a>) -> Result<(), ErrorCode>,
-        E: FnOnce(&mut Emitter<'a>) -> Result<(), ErrorCode>,
+        T: FnOnce(&mut Emitter) -> Result<(), ErrorCode>,
+        E: FnOnce(&mut Emitter) -> Result<(), ErrorCode>,
     {
         let mut jump_to_else = self.cmp(type_.invert(), src1, src2)?;
         then_branch(self)?;
@@ -1320,7 +1331,7 @@ impl<'a> Emitter<'a> {
     ) -> Result<&mut Self, ErrorCode>
     where
         Pre: FnOnce(&mut Self) -> Result<Option<Jump>, ErrorCode>,
-        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext) -> Result<(), ErrorCode>,
         Back: FnOnce(&mut Self) -> Result<Jump, ErrorCode>,
     {
         let mut loop_start = self.put_label()?;
@@ -1357,7 +1368,7 @@ impl<'a> Emitter<'a> {
         body: F,
     ) -> Result<&mut Self, ErrorCode>
     where
-        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext) -> Result<(), ErrorCode>,
     {
         self.loop_impl(
             |em| Ok(Some(em.cmp(type_.invert(), src1.into(), src2.into())?)),
@@ -1383,7 +1394,7 @@ impl<'a> Emitter<'a> {
         src2: impl Into<Operand> + Copy,
     ) -> Result<&mut Self, ErrorCode>
     where
-        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext) -> Result<(), ErrorCode>,
     {
         self.loop_impl(|_| Ok(None), body, |em| em.cmp(type_, src1, src2))
     }
@@ -1391,7 +1402,7 @@ impl<'a> Emitter<'a> {
     #[inline(always)]
     pub fn loop_<F>(&mut self, body: F) -> Result<&mut Self, ErrorCode>
     where
-        F: FnOnce(&mut Self, &mut LoopContext<'a>) -> Result<(), ErrorCode>,
+        F: FnOnce(&mut Self, &mut LoopContext) -> Result<(), ErrorCode>,
     {
         self.loop_impl(|_| Ok(None), body, |em| em.jump(JumpType::Jump))
     }
@@ -1617,6 +1628,14 @@ impl<'a> Emitter<'a> {
     define_simd_op2_vreg! {
         /// Emits a SIMD 2-operand instruction.
         simd_op2, emit_simd_op2;
+    }
+
+    /// Generates executable code from the emitter.
+    ///
+    /// This consumes the emitter and returns the generated code.
+    #[inline(always)]
+    pub fn generate_code(self) -> sys::GeneratedCode {
+        self.compiler.generate_code()
     }
 }
 

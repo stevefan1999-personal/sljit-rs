@@ -108,8 +108,7 @@ fn emit(
 fn compile(source: &str) -> Result<sys::GeneratedCode, Box<dyn Error>> {
     let chars: Vec<char> = source.chars().filter(|&c| "+-><[].,".contains(c)).collect();
 
-    let mut compiler = sys::Compiler::new();
-    let mut emitter = Emitter::new(&mut compiler);
+    let mut emitter = Emitter::default();
 
     use SavedRegister::*;
     use ScratchRegister::*;
@@ -145,7 +144,7 @@ fn compile(source: &str) -> Result<sys::GeneratedCode, Box<dyn Error>> {
     end_jump.set_label(&mut exit_label);
     emitter.return_void()?;
 
-    Ok(compiler.generate_code())
+    Ok(emitter.generate_code())
 }
 
 fn run_bf(name: &str, description: &str, source: &str) -> Result<(), Box<dyn Error>> {
