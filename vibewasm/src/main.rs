@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use example_wasm::Value;
-use example_wasm::{Linker, Module, Store, engine::Engine};
+use vibewasm::{Linker, Module, Store, Value, engine::Engine};
 
 #[crabtime::expression]
 fn compile_wasm(src: String) {

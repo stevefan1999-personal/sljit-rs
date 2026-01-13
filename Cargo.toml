@@ -1,5 +1,5 @@
 [workspace]
-members = ["example-simple", "example-bf", "sljit-sys", "example-wasm", "example-libffi"]
+members = ["example-simple", "example-bf", "sljit-sys", "vibewasm", "example-libffi"]
 
 [workspace.package]
 authors = ["Steve Fan <29133953+stevefan1999-personal@users.noreply.github.com>"]

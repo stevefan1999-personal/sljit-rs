@@ -1,5 +1,5 @@
 [package]
-name = "example-wasm"
+name = "vibewasm"
 authors.workspace = true
 edition.workspace = true
 keywords.workspace = true
