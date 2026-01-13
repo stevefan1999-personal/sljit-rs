@@ -737,7 +737,7 @@ impl<'a> LoopContext<'a> {
 
 /// An emitter for instructions.
 #[repr(transparent)]
-#[derive(Deref, DerefMut)]
+#[derive(Debug, Deref, DerefMut)]
 pub struct Emitter {
     compiler: Compiler,
 }

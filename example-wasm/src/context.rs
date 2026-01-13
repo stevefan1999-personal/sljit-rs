@@ -15,7 +15,6 @@
 //! - Fast access to runtime state without thread-local storage
 //! - Uniform calling convention for wasm-to-wasm and host-to-wasm calls
 
-use crate::function::CompiledFunction;
 use crate::module::InternalFuncType;
 use crate::store::Store;
 use crate::types::{FuncIdx, Value};
