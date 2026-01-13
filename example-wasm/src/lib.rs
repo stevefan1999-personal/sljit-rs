@@ -45,11 +45,17 @@ pub mod types;
 // Engine module
 pub mod engine;
 
+// Context module (JIT calling convention)
+pub mod context;
+
 // Re-export core types for public API
 pub use types::*;
 
 // Re-export engine types
 pub use engine::{Engine, EngineConfig, WasmFeatures};
+
+// Re-export context types
+pub use context::{WasmContext, WasmContextBuilder, WasmContextStorage};
 
 pub(crate) mod helpers;
 
